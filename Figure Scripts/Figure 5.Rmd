@@ -1,0 +1,455 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# Load libraries
+```{r}
+library(tidyverse)
+library(pals)
+## library(ggtree)
+library(ape)
+library(adephylo)
+library(Seurat)
+library(SeuratObject)
+library(ggplot2)
+library(ggdendro)
+library(cowplot)
+library(phylogram)
+library(dendextend)
+library(circlize)
+library(RColorBrewer)
+library(viridis)
+library(ggsci)
+library(pvclust)
+library(reshape2)
+library(stats)
+source("../utils/utilFxns.R")
+source("../utils/plottingFxns.R")
+source("../utils/xgboost_train.R")
+```
+
+# 5a - MG confusion matrix
+```{r}
+RGC_types <- readRDS("../Species_OrthologMatrix/RGC_types_mammals_v6.rds")
+
+# Combine MG and PG from Fovea and Periphery
+Idents(RGC_types) <- "type"
+MG_PG <- WhichCells(RGC_types, idents = c("MG_ON", "MG_OFF", "PG_ON", "PG_OFF", "PG_ON", "ON_MG", "OFF_MG", "ON_PG", "OFF_PG_a", "OFF_PG_b"))
+RGC_types@meta.data[MG_PG, "species_type"] <- paste0(substr(RGC_types@meta.data[MG_PG, "orig.ident"], 1, 3), "_", RGC_types@meta.data[MG_PG, "type"])
+
+# Combine OFF_PG_a and OFF_PG_b in Marmoset
+Idents(RGC_types) <- "species_type"
+RGC_types@meta.data[WhichCells(RGC_types, idents = c("Mar_OFF_PG_a", "Mar_OFF_PG_b")), "species_type"] <- "Mar_OFF_PG"
+
+type_table <- table(RGC_types@meta.data$species_type, RGC_types@meta.data$NOG)
+max_type <- colnames(type_table)[max.col(type_table)]
+
+
+
+# Which types are in each NOG
+types_plot <- which(max_type == "1")
+types_plot <- c(types_plot, which(max_type == "4"))
+types_plot <- c(types_plot, which(max_type == "5"))
+types_plot <- c(types_plot, which(max_type == "2"))
+types_plot <- rownames(type_table)[types_plot]
+
+mvindex <- function(v, before, after){
+  v[c(after, before)] <- v[c(before,after)]
+  return(v)
+}
+
+# Arrange types plot so primates, mouse alphas are adjacent
+types_plot <- mvindex(types_plot,  3:8, 1:2)
+types_plot <- mvindex(types_plot, 21:24, 19:20)
+types_plot <- mvindex(types_plot, 44:58, 43)
+NOG_order <- 1:21
+
+
+plot_table <- type_table[types_plot,NOG_order]
+plot_table = t(scale(t(plot_table), center = FALSE, scale = rowSums(plot_table)))*100
+df = melt(plot_table)
+colnames(df) = c("Species_Type", "OT", "mapping")
+df$OT = factor(df$OT, levels = NOG_order)
+
+df[df$mapping > 60, "mapping"] <- 60
+
+pdf("../Figures/Fig 5/MG_PG_conf.pdf", w=8, h=18, useDingbats = FALSE)
+ggplot(data = df, aes(x=OT, y=Species_Type, fill=mapping)) +
+    geom_tile(colour="gray50", size=0.2) +
+  guides(fill=guide_legend(title="Mapping %")) + 
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+          axis.ticks.y = element_blank(),
+          #axis.text.y = element_blank(),
+          panel.border = element_blank(),
+          axis.title = element_blank()) +
+    scale_fill_gradient2(low = "white",  high = "#A31C0A", na.value = "gray70", breaks = c(0,20,40,60)) + scale_x_discrete(limits = levels(df$OT)) 
+dev.off()
+
+
+```
+
+
+# 5c - proportions
+```{r}
+
+RGC_types <- readRDS("../Species_OrthologMatrix/RGC_types_mammals_v6.rds")
+
+species_list <- c("Opossum", "Ferret", "Pig", "Sheep", "Squirrel","Peromyscus","Rhabdomys",  "Mouse", "Tree_shrew", "MarmosetFovea","MarmosetPeriphery", "HumanFovea", "HumanPeriphery", "MacaqueFovea", "MacaquePeriphery")
+
+RGC_files <- c("OpossumRGC_int_v3","FerretRGC_integrated_v2", "PigRGC_integrated_v2","SheepRGC_int_v2",  "Squirrel_RGC_v2", "PeromyscusRGC_integrated_v3","RhabdomysRGC_int_v2", "MouseRGC_integrated_v2","Tree_shrew_RGC_int_v4", "MarmosetFovea_RGC_int_v3", "MarmosetPeriphery_RGC_int_v2", "HumanFovea_RGC_ann_v2", "HumanPeriphery_RGC_ann_v2", "MacaqueFovea_RGC_velo_ann_v1", "MacaquePeri_RGC_velo_ann_v2")
+
+# Create a mapping vector that maps a species type to a NOG
+type_table <- table(RGC_types@meta.data$species_type, RGC_types@meta.data$NOG)
+type_prop <- t(scale(t(type_table), center = FALSE, scale = rowSums(type_table)))
+
+prop <- NULL
+
+for (i in 1:length(RGC_files)){
+  file <- paste0(RGC_files[i], "_metadata.rds")
+  species <- species_list[i]
+
+  # Read in meta
+  meta_path <- paste0("../Metadata/RGC/", file)
+  meta <- readRDS(meta_path)
+  
+  # Identify corresponding NOG
+  if(species == "MarmosetPeriphery"){
+    meta$species_type <- paste0("MarPer_", meta$type) 
+  }else if(species == "MarmosetFovea"){
+    meta$species_type <- paste0("MarFov_", meta$type) 
+  }else if(species == "MacaquePeriphery"){
+    meta$species_type <- paste0("MacPer_", meta$type) 
+  }else if(species == "MacaqueFovea"){
+    meta$species_type <- paste0("MacFov_", meta$type) 
+  } else if(species == "HumanPeriphery"){
+    meta$species_type <- paste0("HumPer_", meta$type) 
+  }else if(species == "HumanFovea"){
+    meta$species_type <- paste0("HumFov_", meta$type) 
+  } else{
+    meta$species_type <- paste0(substr(species, 1, 3), "_", meta$type) 
+  }
+  
+  
+  species_num = table(meta$species_type)
+  
+  type_prop_species = type_prop[rownames(type_prop) %in% unique(meta$species_type),]
+  
+  species_type_OT_map = as.matrix(type_prop_species) * as.vector(species_num[rownames(type_prop_species)])
+  species_OT_prop = colSums(species_type_OT_map) / sum(species_type_OT_map)
+  
+  # Save proportions
+  if(is.null(prop)){
+    prop <- data.frame(species_OT_prop)
+    prop$species <- species
+    prop$OT = rownames(prop)
+    rownames(prop) = NULL
+  } else{
+    prop_c <- data.frame(species_OT_prop)
+    prop_c$species <- species
+    prop_c$OT <- rownames(prop_c)
+    rownames(prop_c) = NULL
+    prop = rbind(prop, prop_c)
+  }
+}
+
+prop[is.na(prop)] <- 0
+```
+
+```{r}
+prop$OT <- factor(prop$OT, levels = 1:21)
+prop_plot <- subset(prop, OT %in% c("1","2","4","5"))
+prop_plot$OT <- factor(prop_plot$OT, levels = c("1","4","5","2"))
+
+# ON midgets to OT4, OFF midgets to OT1, ON parasols to OT2, and OFF parasols to OT5
+pdf("../Figures/Fig 5/MG_PG_prop.pdf", w=6, h=4, useDingbats = FALSE)
+ggplot(data=prop_plot, aes(x=species, y = species_OT_prop, fill = OT)) +
+      geom_bar(stat = "identity", position = "dodge") +
+      theme_bw() +
+      theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+      xlab("Species") +
+      ylab("Proportion") +
+      scale_y_continuous(limits = c(0, .55), expand = c(0,0)) + 
+      scale_x_discrete(limits = rev(c( "Squirrel","Peromyscus","Rhabdomys",  "Mouse","Opossum", "Ferret",  "Sheep", "Tree_shrew","Pig", "MarmosetPeriphery","MarmosetFovea", "MacaquePeriphery","MacaqueFovea", "HumanPeriphery", "HumanFovea"))) +
+      scale_fill_discrete(name = "OT", labels = c("MG_OFF", "MG_ON", "PG_OFF", "PG_ON")) +
+  scale_fill_manual(values = brewer.paired(4))
+dev.off()
+ 
+      
+```
+
+PG only
+```{r}
+prop$OT <- factor(prop$OT, levels = 1:21)
+prop_plot <- subset(prop, OT %in% c("2", "5"))
+prop_plot$OT <- factor(prop_plot$OT, levels = c("2", "5"))
+
+#  ON parasols to OT2, and OFF parasols to OT5
+pdf("../Figures/Fig 5/PG_prop.pdf", w=6, h=4, useDingbats = FALSE)
+ggplot(data=prop_plot, aes(x=species, y = species_OT_prop, fill = OT)) +
+      geom_bar(stat = "identity", position = "dodge") +
+      theme_bw() +
+      theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+      xlab("Species") +
+      ylab("Proportion") +
+      scale_y_continuous(limits = c(0, .12), expand = c(0,0)) + 
+      scale_x_discrete(limits = c( "Squirrel","Peromyscus","Rhabdomys",  "Mouse","Opossum", "Ferret",  "Sheep", "Tree_shrew","Pig", "MarmosetPeriphery","MarmosetFovea", "MacaquePeriphery","MacaqueFovea", "HumanPeriphery", "HumanFovea")) +
+      scale_fill_discrete(name = "OT", labels = c("PG_ON", "PG_OFF")) +
+      scale_fill_manual(values = brewer.paired(10)[9:10])
+dev.off()
+
+
+pdf("../Figures/Fig 5/PG_prop.pdf", w=6, h=4, useDingbats = FALSE)
+ggplot(data=prop_plot, aes(x=species, y = species_OT_prop, fill = OT)) +
+      geom_bar(stat = "identity", position = "dodge") +
+      theme_bw() +
+      theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+      xlab("Species") +
+      ylab("Proportion") +
+      scale_y_continuous(limits = c(0, .12), expand = c(0,0)) + 
+      scale_x_discrete(limits = c("Rhabdomys","Mouse","Squirrel","Peromyscus","Sheep","Ferret",  "Opossum",    "Tree_shrew","Pig", "MarmosetPeriphery","MarmosetFovea", "MacaquePeriphery","MacaqueFovea", "HumanPeriphery", "HumanFovea")) +
+      scale_fill_discrete(name = "OT", labels = c("PG_ON", "PG_OFF")) +
+      scale_fill_manual(values = brewer.paired(10)[9:10])
+dev.off()
+ 
+
+      
+```
+
+## Scatter binocularity
+```{r}
+
+```
+
+
+## Replicates
+```{r}
+species_list <- c("Opossum", "Ferret", "Pig","Cow", "Sheep", "Squirrel","Peromyscus","Rhabdomys",  "Mouse", "Tree_shrew", "MarmosetFovea","MarmosetPeriphery", "HumanFovea", "HumanPeriphery", "MacaqueFovea", "MacaquePeriphery")
+
+RGC_files <- c("OpossumRGC_int_v3","FerretRGC_integrated_v4", "PigRGC_integrated_v3","CowRGC_integrated_v3", "SheepRGC_integrated_v3",   "Squirrel_RGC_v5", "PeromyscusRGC_integrated_v3","RhabdomysRGC_int_v2", "MouseRGC_int_ann_v3", "Tree_shrew_RGC_int_v3", "MarmosetFovea_RGC_int_v1", "MarmosetPeriphery_RGC_int_v1", "HumanFovea_RGC_ann_v2","HumanPeriphery_RGC_ann_v2", "MacaqueFovea_RGC_velo_ann_v1", "MacaquePeri_RGC_velo_ann_v1")
+
+# Create a mapping vector that maps a species type to a NOG
+type_table <- table(RGC_types@meta.data$species_type, RGC_types@meta.data$NOG)
+max_type <- colnames(type_table)[max.col(type_table)]
+names(max_type) <- rownames(type_table)
+```
+
+```{r}
+prop <- NULL
+
+i=15
+file <- paste0(RGC_files[i], "_metadata.rds")
+species <- species_list[i]
+# Read in meta
+meta_path <- paste0("../Metadata/RGC/", file)
+meta <- readRDS(meta_path)
+  
+# Identify corresponding NOG
+meta$species_type <- paste0(substr(species, 1, 3), "_", meta$type) 
+meta$NOG <- max_type[meta$species_type]
+  
+# Save proportions
+for(file in unique(meta$orig.ident)){
+    file_meta <- subset(meta, orig.ident == file)
+    if(is.null(prop)){
+      prop <- data.frame(table(file_meta$NOG))
+      rownames(prop) <- prop$Var1
+      prop$Var1 <- NULL
+      colnames(prop) <- paste0(species, file)
+    }
+    else{
+      t <- table(file_meta$NOG)
+      prop[names(t), paste0(species, ":", file)] <- t
+    }
+}
+  
+prop[is.na(prop)] <- 0
+
+Cone_prop <- prop[setdiff(rownames(prop) , "RRGC"),]
+Cone_prop <- t(Cone_prop)
+Cone_prop <- Cone_prop / rowSums(Cone_prop)
+Cone_prop <- t(Cone_prop)
+Cone_prop <- melt(Cone_prop)
+
+
+ggplot(data=Cone_prop, aes(x=Var2, y = value, fill = Var1)) +
+      geom_bar(stat = "identity") +
+      theme_bw() +
+      theme(axis.text.x = element_blank()) +
+      xlab(species) +
+      ylab("Proportion") +
+      scale_y_continuous(limits = c(0, 1), expand = c(0,0)) 
+```
+
+# 5b - DE Heatmap
+
+## Playing with gene selection
+```{r}
+Idents(RGC_types) <- "NOG"
+
+markers <- FindAllMarkers(RGC_types, assay = "RNA", max.cells.per.ident = 1000, only.pos = TRUE)
+OT1_m <- head(subset(markers, cluster == 1)$gene, 20)
+OT2_m <- head(subset(markers, cluster == 2)$gene, 20)
+OT4_m <- head(subset(markers, cluster == 4)$gene, 20)
+OT5_m <- head(subset(markers, cluster == 5)$gene, 20)
+
+MG_markers <- FindMarkers(RGC_types, assay = "RNA", max.cells.per.ident = 1000, ident.1 = c(1,4), only.pos = TRUE)
+PG_markers <- FindMarkers(RGC_types, assay = "RNA", ident.1 = c(2,5), only.pos = TRUE)
+MG_PG_markers <- FindMarkers(RGC_types, assay = "RNA", ident.1 = c(1,2,4,5),max.cells.per.ident = 2000, only.pos = TRUE)
+
+
+DefaultAssay(RGC_types) <- "RNA"
+
+plot_markers <- c("ESRRG", "RXRG", "SLC4A4", "PRKD1", "TRPC3", "NETO1", "IRX3", "GSG1L", "SPP1", "PROX1", "SORCS3", "TLE1", "LRRTM3", "BDNF", "IL1RAPL2", "ONECUT1", "TLL1", "ZBTB7C", "NTNG2", "ITGAV")
+
+
+
+"EOMES", "ZEB2", "TBR1", "MEIS2", "MAFB", "PROX1", "SORCS3", "TLE1", "LRRTM3", "CHRNA2"
+
+DotPlot(RGC_types, features = plot_markers, group.by = "NOG", assay = "RNA") + RotatedAxis()
+
+
+Idents(RGC_types) <- "species_type"
+DotPlot(RGC_types, features = plot_markers, group.by = "species_type", split.by = "NOG", idents = types_plot, assay = "RNA") + RotatedAxis()
+
+DotPlot(RGC_types, features = plot_markers, split.by = "species_type")
+
+```
+
+## aaahh
+```{r}
+# Which types are in each NOG
+types_plot <- which(max_type == "1")
+types_plot <- c(types_plot, which(max_type == "2"))
+types_plot <- c(types_plot, which(max_type == "4"))
+types_plot <- c(types_plot, which(max_type == "5"))
+types_plot <- rownames(type_table)[types_plot]
+
+MG <- subset(RGC_types, NOG %in% c("1","2","4","5"))
+MG <- subset(MG, species_type %in% types_plot)
+
+MG@meta.data$species_type <- factor(MG@meta.data$species_type, levels = types_plot)
+
+plot_markers <- c("EOMES", "ZEB2", "TBR1", "MEIS2", "MAFB", "PROX1", "SORCS3", "TLE1", "LRRTM3", "CHRNA2")
+plot_markers <- plot_markers[plot_markers %in% rownames(MG)]
+
+DotPlot(MG, features = plot_markers, group.by = "species_type", assay = "RNA") + RotatedAxis()
+
+Idents(MG) <- "NOG"
+MG_markers <- FindAllMarkers(MG, assay = "RNA", max.cells.per.ident = 2000, only.pos = TRUE)
+
+DotPlot(MG, assay = "RNA", features = TopMarkers(MG_markers, num_markers = 5), group.by = "species_type" ) + RotatedAxis()
+```
+
+## Supp 11a - dotplot
+```{r}
+
+RGC_types <- readRDS("../Species_OrthologMatrix/RGC_types_mammals_v6.rds")
+
+features <- c("MEIS2","TFAP2D", "PLXNA2", "TBR1",  "IRX3","GRM5","ZEB2", "EOMES",  "MAFB", "PROX1", "TLE1")
+
+
+new_counts <- rbind(RGC_types@assays$RNA@counts, RGC_types@assays$RNA@counts[1:length(features),] - RGC_types@assays$RNA@counts[1:length(features),])
+
+rownames(new_counts)[(nrow(new_counts)-length(features)+1):nrow(new_counts)] <- features
+
+RGC_files <- c("OpossumRGC_int_v3","FerretRGC_integrated_v2", "PigRGC_integrated_v2","SheepRGC_int_v2",  "Squirrel_RGC_v2", "PeromyscusRGC_integrated_v3","RhabdomysRGC_int_v2", "MouseRGC_integrated_v2","Tree_shrew_RGC_int_v4", "MarmosetFovea_RGC_int_v3", "MarmosetPeriphery_RGC_int_v2", "HumanFovea_RGC_ann_v2", "HumanPeriphery_RGC_ann_v2", "MacaqueFovea_RGC_velo_ann_v1", "MacaquePeri_RGC_velo_ann_v2")
+
+species_list <- c("Opossum","Ferret", "Pig","Sheep",  "Squirrel", "Peromyscus","Rhabdomys", "Mouse","Tree_shrew", "MarmosetFovea", "MarmosetPeriphery", "HumanFovea", "HumanPeriphery", "MacaqueFovea", "MacaquePeriphery")
+
+for(i in 1:length(species_list)){
+  species <- species_list[i]
+  file <- RGC_files[i]
+  
+  print(species)
+  
+  species_obj <- readRDS(paste0("../Species_Objects/", file, ".rds"))
+  species_obj <- UpperCase_genes(species_obj)
+  
+  # Find cells
+  RGC_cells <- rownames(RGC_types@meta.data)[which(RGC_types@meta.data$orig.ident == species)]
+  species_cells <- unlist(strsplit(RGC_cells, ";"))[1:length(RGC_cells)*2]
+  
+  # Extract expression
+  features_in <- features[features %in% rownames(species_obj)]
+  new_counts[features_in, RGC_cells] <-   species_obj@assays$RNA@counts[features_in, species_cells]
+}
+
+
+```
+
+```{r}
+RGC_new <- CreateSeuratObject(new_counts, names.delim = ";")
+RGC_new <- NormalizeData(RGC_new)
+RGC_new <- UpperCase_genes(RGC_new)
+All_new@reductions$umap <- RGC_types@reductions$umap
+RGC_new@meta.data <-  RGC_types@meta.data
+
+MG_new <- subset(RGC_new, NOG %in% c("1","2","4","5"))
+MG_new <- subset(MG_new, species_type %in% types_plot)
+
+MG_new@meta.data$species_type <- factor(MG_new@meta.data$species_type, levels = types_plot)
+
+features <- c("MEIS2","TFAP2D", "PLXNA2", "TBR1",  "IRX3","GRM5","ZEB2", "EOMES",  "MAFB", "PROX1", "TLE1")
+
+
+
+pdf("../Figures/Fig 5/Supp11_a.pdf", w=8, h=18, useDingbats = FALSE)
+DotPlot(MG_new, features = features, group.by = "species_type",assay = "RNA", cols = c("white", "#6e78ff"),  scale.max = 50,  col.max = 2) + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+dev.off()
+
+
+
+
+```
+
+
+## Heatmap
+```{r}
+plot_markers <- c("ESRRG", "RXRG", "SLC4A4", "PRKD1", "TRPC3", "NETO1", "IRX3", "GSG1L", "SPP1", "PROX1", "SORCS3", "TLE1", "LRRTM3", "BDNF", "IL1RAPL2", "ONECUT1", "TLL1", "ZBTB7C", "NTNG2", "ITGAV")
+
+
+# Order types correctly
+type_table <- table(RGC_types@meta.data$species_type, RGC_types@meta.data$NOG)
+
+max_type <- colnames(type_table)[max.col(type_table)]
+NOG_order <- c(1,2,4,5)
+types_plot <- c()
+separate_points <- c(0)
+for(NOG in NOG_order){
+  types_plot <- c(types_plot, which(max_type %in% c(NOG)))
+  separate_points <- c(separate_points, max(separate_points) + length(which(max_type %in% c(NOG))))
+}
+types_plot <- rownames(type_table)[types_plot]
+
+# Calculate scaled expression
+avg_exp <- AverageExpression(RGC_types, features = plot_markers, group.by = "species_type", slot = "data")
+plot_exp <- data.frame(apply(avg_exp$RNA, 1, scale), row.names = colnames(avg_exp$RNA))
+plot_exp[plot_exp > 2.5] <- 2.5
+plot_exp[plot_exp < -2.5] <- -2.5
+
+melt_table <- melt(t(plot_exp[types_plot,]))
+
+pdf("../Figures/Fig 5/Gene_heatmap_MG_only.pdf", w=8, h=10, useDingbats = FALSE)
+ggplot(data = melt_table, aes(x=Var1, y=Var2, fill=value)) +
+    geom_tile(colour="white", size=0.2) +
+    theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1),
+          #axis.text.y = element_blank(),
+          panel.border = element_blank(),
+          axis.title = element_blank()) +
+    scale_fill_gradient(low = "white",  high = "darkblue", na.value = "gray70") +
+    scale_y_discrete(breaks = types_plot[separate_points])
+dev.off()
+
+pdf("../Figures/Fig 5/Gene_dotplot.pdf", w=8, h=10, useDingbats = FALSE)
+DotPlot(RGC_types, features = plot_markers, group.by = "NOG", assay = "RNA") + RotatedAxis()
+dev.off()
+```
+
+
+
+# scratch
+```{r}
+Marmoset <- readRDS("../Species_Objects/MarmosetFovea_RGC_int_v3.rds")
+```
+

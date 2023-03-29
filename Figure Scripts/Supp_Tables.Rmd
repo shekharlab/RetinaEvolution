@@ -1,0 +1,463 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# Load libraries
+```{r}
+library(aricode)
+library(tidyverse)
+library(pals)
+## library(ggtree)
+library(Seurat)
+library(SeuratObject)
+library(ggplot2)
+library(ggdendro)
+library(cowplot)
+library(phylogram)
+library(dendextend)
+library(circlize)
+library(RColorBrewer)
+library(viridis)
+library(ggsci)
+library(pvclust)
+library(reshape2)
+source("utils/utilFxns.R")
+source("utils/plottingFxns.R")
+```
+
+
+# File directory
+```{r}
+RGC_files <- c("ZebrafishRGC_v1", "ChickenRGC_v1", "PigRGC_integrated_v2", "FerretRGC_integrated_v2", "Squirrel_RGC_v2", "PeromyscusRGC_integrated_v3", "MouseRGC_integrated_v2","MarmosetFovea_RGC_int_v3", "MarmosetPeriphery_RGC_int_v2", "HumanFovea_RGC_int_ann_v1", "HumanPeriphery_RGC_ann_v1", "MacaqueFovea_RGC_velo_ann_v1", "MacaquePeri_RGC_velo_ann_v1", "LizardRGC_int_v2", "OpossumRGC_int_v2", "Tree_shrew_RGC_int_v5", "RhabdomysRGC_int_v2")
+
+
+
+BC_files <- c("ZebrafishBC_v3", "ChickenBC_v1", "PigBC_integrated_v3", "FerretBC_integrated_v4",  "Squirrel_BC_v5", "PeromyscusBC_integrated_v3", "MouseBC_int_ann_v3","MarmosetFovea_BC_int_v1", "MarmosetPeriphery_BC_int_v1", "HumanFovea_BC_int_ann_v1","HumanPeriphery_BC_ann_v1", "MacaqueFovea_BC_velo_ann_v1", "MacaquePeri_BC_velo_ann_v1","LizardBC_integrated_v1","OpossumBC_int_v2", "Tree_shrew_BC_int_v3", "RhabdomysBC_int_v2", "CowBC_integrated_v3", "SheepBC_integrated_v3")
+
+
+
+directory <- data.frame(RGC = RGC_files, BC = BC_files, row.names = c("Zebrafish", "Chicken", "Pig", "Ferret","Squirrel","Peromyscus","Mouse","MarmosetFovea","MarmosetPeriphery", "HumanFovea","HumanPeriphery", "MacaqueFovea", "MacaquePeriphery","Lizard","Opossum", "Tree_shrew", "Rhabdomys", "Cow", "Sheep"))
+
+saveRDS(directory, "file_directory.rds")
+```
+
+
+# Supp Table 1
+Calculate the composition of each cell type across species and sample RGCs and BCs across each species
+```{r}
+species_list <- c("Lamprey", "Zebrafish", "Lizard", "Chicken","Opossum", "Ferret","Pig","Cow", "Sheep", "Squirrel","Peromyscus", "Rhabdomys", "Mouse", "Tree_shrew", "MarmosetFovea", "MarmosetPeriphery", "MacaqueFovea","MacaquePeriphery","HumanFovea", "HumanPeriphery")
+
+classes = c("RGC","BP","GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG", "MicroG", "Other")
+
+composition <- as.data.frame(matrix(0, nrow = length(species_list), ncol = length(classes)))
+rownames(composition) <- species_list
+colnames(composition) <- classes
+
+
+for (species in species_list){
+  # Read in each object
+  meta_path <- paste0("../Metadata/", species, "_metadata.rds")
+  meta_data <- readRDS(meta_path)
+
+  # Count number of cells in each of the 5 major classes
+  major_classes <- table(meta_data$cell_class)
+  composition[species, classes] <- major_classes[classes]
+}
+
+composition[is.na(composition)] <- 0
+```
+
+## Only keep RGCs in final objects
+```{r}
+RGC_files <- c("LampreyRGC_int_v1", "ZebrafishRGC_v1","LizardRGC_int_v2", "ChickenRGC_v1", "OpossumRGC_int_v4","FerretRGC_integrated_v2", "PigRGC_integrated_v2","SheepRGC_int_v2", "Squirrel_RGC_v2", "PeromyscusRGC_integrated_v3", "RhabdomysRGC_int_v2", "MouseRGC_integrated_v2","Tree_shrew_RGC_int_v5", "MarmosetFovea_RGC_int_v3", "MarmosetPeriphery_RGC_int_v2","MacaqueFovea_RGC_velo_ann_v1", "MacaquePeri_RGC_velo_ann_v2", "HumanFovea_RGC_ann_v2", "HumanPeriphery_RGC_ann_v2")
+
+species_list <- c("Lamprey", "Zebrafish", "Lizard", "Chicken","Opossum", "Ferret","Pig", "Sheep", "Squirrel","Peromyscus", "Rhabdomys", "Mouse", "Tree_shrew", "MarmosetFovea", "MarmosetPeriphery", "MacaqueFovea","MacaquePeriphery","HumanFovea", "HumanPeriphery")
+
+for (i in 1:length(species_list)){
+ species <- species_list[i]
+ file <- RGC_files[i]
+  # Read in each object
+  meta_path <- paste0("../Metadata/RGC/", file, "_metadata.rds")
+  meta_data <- readRDS(meta_path)
+
+  # Count number of cells in each of the 5 major classes
+  composition[species, "RGC"] <- dim(meta_data)[1]
+}
+
+
+```
+
+## BCs in objs only
+```{r}
+
+BC_files <- c("LampreyBC_int_v1", "ZebrafishBC_v3","LizardBC_integrated_v1", "ChickenBC_v1","OpossumBC_int_v3","FerretBC_integrated_v4",  "PigBC_integrated_v3", "SheepBC_integrated_v3", "CowBC_integrated_v3", "Squirrel_BC_v5", "PeromyscusBC_integrated_v3","RhabdomysBC_int_v2", "MouseBC_int_ann_v3","Tree_shrew_BC_int_v3", "MarmosetFovea_BC_int_v1", "MarmosetPeriphery_BC_int_v1", "MacaqueFovea_BC_velo_ann_v1", "MacaquePeri_BC_velo_ann_v1", "HumanFovea_BC_ann_v2","HumanPeriphery_BC_ann_v2")
+
+species_list <- c("Lamprey", "Zebrafish", "Lizard", "Chicken","Opossum", "Ferret","Pig", "Sheep","Cow", "Squirrel","Peromyscus", "Rhabdomys", "Mouse", "Tree_shrew", "MarmosetFovea", "MarmosetPeriphery", "MacaqueFovea","MacaquePeriphery","HumanFovea", "HumanPeriphery")
+
+
+for (i in 1:length(species_list)){
+ species <- species_list[i]
+ file <- BC_files[i]
+  # Read in each object
+  meta_path <- paste0("../Metadata/BC/", file, "_metadata.rds")
+  meta_data <- readRDS(meta_path)
+
+  # Count number of cells in each of the 5 major classes
+  composition[species, "BP"] <- dim(meta_data)[1]
+}
+
+
+```
+
+
+Format table, combining ACs, PRs, fovea / periphery, glia
+```{r}
+table_1 <- composition
+
+table_1$GabaAC <- table_1$GabaAC + table_1$GlyAC
+table_1$GlyAC <- NULL
+colnames(table_1)[3] <- "AC"
+
+table_1$Rod <- table_1$Rod + table_1$Cone
+table_1$Cone <- NULL
+colnames(table_1)[5] <- "PR"
+
+table_1$MG <- table_1$MG + table_1$MicroG
+table_1$MicroG <- NULL
+
+table_1["HumanFovea", ]<- table_1["HumanPeriphery", ] + table_1["HumanFovea", ]
+table_1["MacaqueFovea", ]<- table_1["MacaquePeriphery", ] + table_1["MacaqueFovea", ]
+table_1["MarmosetFovea", ]<- table_1["MarmosetPeriphery", ] + table_1["MarmosetFovea", ]
+
+table_1 <- table_1[c(-20,-18,-16),]
+
+rownames(table_1)[14:17] <- c("Tree Shrew", "Marmoset", "Macaque", "Human")
+
+table_1$Other <- NULL
+table_1$Total_Annotated <- rowSums(table_1)
+table_1["Class_Totals", ] <- colSums(table_1)
+
+
+table_1$Latin_Name <- c("Petromyzon marinus",  "Danio rerio", "Anolis sagrei", "Gallus gallus domesticus", "Monodelphis domestica", "Mustela putoriusfuro", "Sus domesticus", "Bos taurus", "Ovis aries", "Ictidomys tridecemlineatus", "Peromyscus maniculatus bairdii", "Rhabdomys pumilio", "Mus musculus","Tupaia belangeri chinensis", "Callithrix jacchus", "Macaca fascicularis", "Homo sapiens", NA  )
+
+table_1 <- table_1[,c(8, 1:7)]
+
+write.csv(table_1, "../../Manuscript/Figures and Tables/Supp_Table_1.csv")
+```
+
+# Supp Table 2 - number of clusters
+```{r}
+RGC_files <- c("LampreyRGC_int_v1",  "ZebrafishRGC_v1","LizardRGC_int_v2", "ChickenRGC_v1","OpossumRGC_int_v3","FerretRGC_integrated_v2", "PigRGC_integrated_v2","SheepRGC_int_v2",  "Squirrel_RGC_v2", "PeromyscusRGC_integrated_v3","RhabdomysRGC_int_v2", "MouseRGC_integrated_v2","Tree_shrew_RGC_int_v4", "MarmosetFovea_RGC_int_v3", "MarmosetPeriphery_RGC_int_v2", "HumanFovea_RGC_ann_v2.rds", "HumanPeriphery_RGC_ann_v2.rds", "MacaqueFovea_RGC_velo_ann_v1", "MacaquePeri_RGC_velo_ann_v2")
+
+"../Species_Objects/LampreyBC_int_v1.rds"
+
+BC_files <- c("LampreyBC_int_v1.rds", "ZebrafishBC_v3", "ChickenBC_v1", "PigBC_integrated_v3", "FerretBC_integrated_v4",  "Squirrel_BC_v5", "PeromyscusBC_integrated_v3", "MouseBC_int_ann_v3","MarmosetFovea_BC_int_v1", "MarmosetPeriphery_BC_int_v1", "HumanFovea_BC_ann_v2","HumanPeriphery_BC_v2", "MacaqueFovea_BC_velo_ann_v1", "MacaquePeri_BC_velo_ann_v1", "CowBC_integrated_v3", "SheepBC_integrated_v3", "LizardBC_integrated_v1", "OpossumBC_int_v3", "Tree_shrew_BC_int_v3", "RhabdomysBC_int_v2")
+
+
+
+directory <- data.frame(RGC = RGC_files, BC = BC_files, row.names = c("Zebrafish", "Chicken", "Pig", "Ferret","Squirrel","Peromyscus","Mouse","Marmoset", "Human","Macaque"))
+
+```
+
+
+```{r}
+directory <- readRDS("file_directory.rds")
+directory$total_RGC <- 0
+directory$total_BC <- 0
+directory$small_RGC_clus <- 0
+directory$small_BC_clus <- 0
+directory$num_RGC_clus <- 0
+directory$num_BC_clus <- 0
+
+directory$meanRGCcounts <- 0
+directory$meanBCcounts <- 0
+directory$meanRGCfeatures <- 0
+directory$meanBCfeatures <- 0
+
+directory$RGC_InSimpson <- 0
+directory$BC_InSimpson <- 0
+
+
+Count_plot_list <- list()
+Feature_plot_list <- list()
+Dim_plot_list <- list()
+i <- 1
+
+for(species in rownames(directory)){
+  path <- paste0("Species_Objects/", directory[species, "RGC"])
+  obj <- readRDS(path)
+  
+  # Create a VlnPlot of nCount_RNA and nFeature_RNA
+  Idents(obj) <- species
+  # Count_plot_list[[i]] <- VlnPlot(obj, features = "nCount_RNA", y.max = 35000, pt.size = 0) + theme(legend.position = 'none')
+  # Feature_plot_list[[i]] <- VlnPlot(obj, features = "nFeature_RNA", y.max = 8000, pt.size = 0) + theme(legend.position = 'none')
+  
+  # Determine average number of counts and features per cell
+  directory[species, "meanRGCcounts"] <- mean(obj@meta.data$nCount_RNA)
+  directory[species, "meanRGCfeatures"] <- mean(obj@meta.data$nFeature_RNA)
+  
+  # Count the total number of cells and the size of the smallest and largest cluster
+  directory[species, "total_RGC"] <- dim(obj@assays$RNA)[2]
+  if(is.null(obj@meta.data$annotated)){
+    Idents(obj) <- "seurat_clusters"
+    directory[species, "small_RGC_clus"] <- min(table(Idents(obj)))
+    directory[species, "large_RGC_clus"] <- max(table(Idents(obj)))
+    directory[species, "num_RGC_clus"] <- length(table(Idents(obj)))
+  }
+  
+  else{
+    Idents(obj) <- "annotated"
+    directory[species, "small_RGC_clus"] <- min(table(Idents(obj)))
+    directory[species, "large_RGC_clus"] <- max(table(Idents(obj)))
+    directory[species, "num_RGC_clus"] <- length(table(Idents(obj)))
+  }
+  # Dim_plot_list[[i]] <- DimPlot(obj) +ggtitle(paste0(species, " RGC"))
+  i <- i+1
+  
+  # Calculate diversity index
+  directory[species, "RGC_InSimpson"] <- SimpsonIndex(table(Idents(obj)), invert = TRUE)
+}
+
+pdf("Figures/Counts and Features/Species_RGC_Counts.pdf", w=3, h=6, useDingbats = FALSE)
+Count_plot_list
+dev.off()
+
+pdf("Figures/Counts and Features/Species_RGC_Features.pdf", w=3, h=6, useDingbats = FALSE)
+Feature_plot_list
+dev.off()
+
+pdf("Figures/Species_UMAPs/Species_RGC_DimPlot.pdf", w=8, h=6, useDingbats = FALSE)
+Dim_plot_list
+dev.off()
+```
+
+
+# OT robustness
+## RGC
+```{r}
+RGC_types <- readRDS("../Species_OrthologMatrix/BC_t")
+DefaultAssay(RGC_types) <- "integrated"
+
+reso_range <- 5:15 / 10
+RGC_types <- FindNeighbors(RGC_types, dims = 1:20)
+
+track_df <- data.frame(resolution = reso_range, ARI = rep(0, length(reso_range)), nclust = rep(0, length(reso_range)), max_species = rep(0, length(reso_range)), min_species = rep(0, length(reso_range)), avg_species = rep(0, length(reso_range)), species_specific = rep(0, length(reso_range)))
+
+new_plot <- data.frame(resolution = c(), num_species = c())
+
+for(i in 1:length(reso_range)){
+  RGC_types <- FindClusters(RGC_types, resolution = reso_range[i], verbose = FALSE)
+  track_df[i, "ARI"] <- ARI(RGC_types@meta.data$seurat_clusters, RGC_types@meta.data$NOG)
+  track_df[i, "nclust"] <- length(levels(RGC_types$seurat_clusters))
+  
+  type_table <- table(RGC_types@meta.data$species_type, RGC_types@meta.data$seurat_clusters)
+  max_type <- colnames(type_table)[max.col(type_table)]
+  species_in <- c()
+  for(j in colnames(type_table)){
+    types_in <- rownames(type_table)[which(max_type %in% j)]
+    species_in <- c(species_in, length(table(substr(types_in, 1, 3))))
+    new_plot <- rbind(new_plot, c(reso_range[i], length(table(substr(types_in, 1, 3)))))
+  }
+  
+  track_df[i, "max_species"] <- max(species_in)
+  track_df[i, "min_species"] <- min(species_in)
+  track_df[i, "avg_species"] <- mean(species_in)
+  track_df[i, "species_specific"] <- table(species_in)["1"]
+}
+
+
+
+
+```
+
+### Threshold
+```{r}
+RGC_types <- readRDS("../Species_OrthologMatrix/RGC_types_mammals_v6.rds")
+DefaultAssay(RGC_types) <- "integrated"
+
+reso_range <- 5:15 / 10
+RGC_types <- FindNeighbors(RGC_types, dims = 1:20)
+
+track_df <- data.frame(resolution = reso_range, ARI = rep(0, length(reso_range)), nclust = rep(0, length(reso_range)), max_species = rep(0, length(reso_range)), min_species = rep(0, length(reso_range)), avg_species = rep(0, length(reso_range)), species_specific = rep(0, length(reso_range)))
+
+new_plot <- data.frame(resolution = c(), num_species = c())
+
+for(i in 1:length(reso_range)){
+  RGC_types <- FindClusters(RGC_types, resolution = reso_range[i], verbose = FALSE)
+  track_df[i, "ARI"] <- ARI(RGC_types@meta.data$seurat_clusters, RGC_types@meta.data$NOG)
+  track_df[i, "nclust"] <- length(levels(RGC_types$seurat_clusters))
+  
+  type_table <- table(RGC_types@meta.data$species_type, RGC_types@meta.data$seurat_clusters)
+  max_type <- colnames(type_table)[max.col(type_table)]
+  species_in <- c()
+  for(j in colnames(type_table)){
+    types_in <- rownames(type_table)[which(max_type %in% j)]
+    species_in <- c(species_in, length(table(substr(types_in, 1, 3))))
+    new_plot <- rbind(new_plot, c(reso_range[i], length(table(substr(types_in, 1, 3)))))
+  }
+  
+  track_df[i, "max_species"] <- max(species_in)
+  track_df[i, "min_species"] <- min(species_in)
+  track_df[i, "avg_species"] <- mean(species_in)
+  track_df[i, "species_specific"] <- table(species_in)["1"]
+}
+
+
+
+
+```
+
+
+## BC
+```{r}
+BC_types <- readRDS("../Species_OrthologMatrix/BC_types_mammals_v5.rds")
+DefaultAssay(BC_types) <- "integrated"
+
+reso_range <- 5:15 / 10
+BC_types <- FindNeighbors(BC_types, dims = 1:20)
+
+track_df_BC <- data.frame(resolution = reso_range, ARI = rep(0, length(reso_range)), nclust = rep(0, length(reso_range)), max_species = rep(0, length(reso_range)), min_species = rep(0, length(reso_range)), avg_species = rep(0, length(reso_range)), species_specific = rep(0, length(reso_range)))
+
+new_plot <- data.frame(resolution = c(), num_species = c())
+
+
+for(i in 1:length(reso_range)){
+  BC_types <- FindClusters(BC_types, resolution = reso_range[i], verbose = FALSE)
+  track_df_BC[i, "ARI"] <- ARI(BC_types@meta.data$seurat_clusters, BC_types@meta.data$NOG)
+  track_df_BC[i, "nclust"] <- length(levels(BC_types$seurat_clusters))
+  
+  type_table <- table(BC_types@meta.data$species_type, BC_types@meta.data$seurat_clusters)
+  max_type <- colnames(type_table)[max.col(type_table)]
+  species_in <- c()
+  for(j in colnames(type_table)){
+    types_in <- rownames(type_table)[which(max_type %in% j)]
+    species_in <- c(species_in, length(table(substr(types_in, 1, 3))))
+    new_plot <- rbind(new_plot, c(reso_range[i], length(table(substr(types_in, 1, 3)))))
+
+  }
+  
+  track_df_BC[i, "max_species"] <- max(species_in)
+  track_df_BC[i, "min_species"] <- min(species_in)
+  track_df_BC[i, "avg_species"] <- mean(species_in)
+  track_df_BC[i, "species_specific"] <- table(species_in)["1"]
+}
+
+track_df_BC[is.na(track_df_BC)] <- 0
+
+
+
+```
+
+### threshold
+```{r}
+BC_types <- readRDS("../Species_OrthologMatrix/BC_types_mammals_v5.rds")
+DefaultAssay(BC_types) <- "integrated"
+
+reso_range <- 5:15 / 10
+BC_types <- FindNeighbors(BC_types, dims = 1:20)
+
+track_df_BC <- data.frame(resolution = reso_range, ARI = rep(0, length(reso_range)), nclust = rep(0, length(reso_range)), max_species = rep(0, length(reso_range)), min_species = rep(0, length(reso_range)), avg_species = rep(0, length(reso_range)), species_specific = rep(0, length(reso_range)))
+
+new_plot <- data.frame(resolution = c(), num_species = c())
+
+threshold <- .6
+
+for(i in 1:length(reso_range)){
+  BC_types$seurat_clusters <- BC_types@meta.data[, paste0("integrated_snn_res.", as.character(reso_range[i]))]
+  track_df_BC[i, "ARI"] <- ARI(BC_types@meta.data$seurat_clusters, BC_types@meta.data$NOG)
+  track_df_BC[i, "nclust"] <- length(levels(BC_types$seurat_clusters))
+  
+  type_table <- table(BC_types@meta.data$species_type, BC_types@meta.data$seurat_clusters)
+  type_table <- type_table / rowSums(type_table)
+  species_in <- c()
+  for(j in colnames(type_table)){
+    types_in <- names(which(type_table[,j] > threshold))
+    species_in <- c(species_in, length(table(substr(types_in, 1, 3))))
+    new_plot <- rbind(new_plot, c(reso_range[i], length(table(substr(types_in, 1, 3)))))
+
+  }
+  
+  track_df_BC[i, "max_species"] <- max(species_in)
+  track_df_BC[i, "min_species"] <- min(species_in)
+  track_df_BC[i, "avg_species"] <- mean(species_in)
+  track_df_BC[i, "species_specific"] <- table(species_in)["1"]
+}
+
+track_df_BC[is.na(track_df_BC)] <- 0
+
+
+
+```
+
+## plots
+```{r}
+pdf("../Figures/OT Robustness/RGC_reso_numOTs.pdf", w=5, h=4, useDingbats = FALSE)
+ggplot(track_df, aes(x=resolution, y=nclust)) + 
+  geom_point() + 
+  theme_bw() +
+  xlab("Resolution Parameter") +
+  ylab("Number of RGC OTs") + 
+  scale_x_continuous(breaks=seq(.5, 1.5, .2))
+dev.off()
+
+pdf("../Figures/OT Robustness/RGC_reso_ARI.pdf", w=5, h=4, useDingbats = FALSE)
+ggplot(track_df, aes(x=resolution, y=ARI)) + 
+  geom_point() + 
+  theme_bw() +
+  xlab("Resolution Parameter") +
+  ylab("ARI") + 
+  scale_x_continuous(breaks=seq(.5, 1.5, .2))
+dev.off()
+
+pdf("../Figures/OT Robustness/RGC_reso_species_specific.pdf", w=5, h=4, useDingbats = FALSE)
+ggplot(track_df, aes(x=resolution, y=species_specific)) + 
+  geom_point() + 
+  theme_bw() +
+  xlab("Resolution Parameter") +
+  ylab("Number of Species Specific OTs") + 
+  scale_x_continuous(breaks=seq(.5, 1.5, .2))
+dev.off()
+
+```
+
+```{r}
+pdf("../Figures/OT Robustness/BC_reso_numOTs.pdf", w=5, h=4, useDingbats = FALSE)
+ggplot(track_df_BC, aes(x=resolution, y=nclust)) + 
+  geom_point() + 
+  theme_bw() +
+  xlab("Resolution Parameter") +
+  ylab("Number of BC OTs") + 
+  scale_x_continuous(breaks=seq(.5, 1.5, .2))
+dev.off()
+
+pdf("../Figures/OT Robustness/BC_reso_ARI.pdf", w=5, h=4, useDingbats = FALSE)
+ggplot(track_df_BC, aes(x=resolution, y=ARI)) + 
+  geom_point() + 
+  theme_bw() +
+  xlab("Resolution Parameter") +
+  ylab("ARI") + 
+  scale_x_continuous(breaks=seq(.5, 1.5, .2))
+dev.off()
+
+pdf("../Figures/OT Robustness/BC_reso_species_specific.pdf", w=5, h=4, useDingbats = FALSE)
+ggplot(track_df_BC, aes(x=resolution, y=species_specific)) + 
+  geom_point() + 
+  theme_bw() +
+  xlab("Resolution Parameter") +
+  ylab("Number of Species Specific OTs") + 
+  scale_x_continuous(breaks=seq(.5, 1.5, .2))
+dev.off()
+
+```
+
+```{r}
+colnames(new_plot) <- c("Resolution", "Number_Species")
+ggplot(new_plot, aes(x=Resolution, y=Number_Species)) + 
+  geom_jitter(width = .01, height = .3) + 
+  theme_bw() +
+  xlab("Resolution Parameter") +
+  ylab("Number of Species Specific in each OTs") + 
+  scale_x_continuous(breaks=seq(.5, 1.5, .2))
+```
+

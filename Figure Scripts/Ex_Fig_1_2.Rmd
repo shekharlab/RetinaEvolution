@@ -1,0 +1,1428 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# Load libraries
+```{r}
+library(tidyverse)
+library(pals)
+## library(ggtree)
+library(Seurat)
+library(SeuratObject)
+library(ggplot2)
+library(ggdendro)
+library(cowplot)
+library(phylogram)
+library(dendextend)
+library(circlize)
+library(RColorBrewer)
+library(viridis)
+library(ggsci)
+library(pvclust)
+library(reshape2)
+source("../utils/utilFxns.R")
+source("../utils/plottingFxns.R")
+```
+
+
+# File directory
+```{r}
+RGC_files <- c("ZebrafishRGC_v1", "ChickenRGC_v1", "PigRGC_integrated_v2", "FerretRGC_integrated_v2", "Squirrel_RGC_v2", "PeromyscusRGC_integrated_v3", "MouseRGC_integrated_v2","MarmosetFovea_RGC_int_v3", "MarmosetPeriphery_RGC_int_v2", "HumanFovea_RGC_int_ann_v1", "HumanPeriphery_RGC_ann_v1", "MacaqueFovea_RGC_velo_ann_v1", "MacaquePeri_RGC_velo_ann_v1", "LizardRGC_int_v2", "OpossumRGC_int_v2", "Tree_shrew_RGC_int_v5", "RhabdomysRGC_int_v2")
+
+
+
+BC_files <- c("ZebrafishBC_v3", "ChickenBC_v1", "PigBC_integrated_v3", "FerretBC_integrated_v4",  "Squirrel_BC_v5", "PeromyscusBC_integrated_v3", "MouseBC_int_ann_v3","MarmosetFovea_BC_int_v1", "MarmosetPeriphery_BC_int_v1", "HumanFovea_BC_int_ann_v1","HumanPeriphery_BC_ann_v1", "MacaqueFovea_BC_velo_ann_v1", "MacaquePeri_BC_velo_ann_v1","LizardBC_integrated_v1","OpossumBC_int_v2", "Tree_shrew_BC_int_v3", "RhabdomysBC_int_v2", "CowBC_integrated_v3", "SheepBC_integrated_v3",  "GoldfishBC_integrated_v1"  )
+
+
+
+directory <- data.frame(RGC = RGC_files, BC = BC_files, row.names = c("Zebrafish", "Chicken", "Pig", "Ferret","Squirrel","Peromyscus","Mouse","MarmosetFovea","MarmosetPeriphery", "HumanFovea","HumanPeriphery", "MacaqueFovea", "MacaquePeriphery","Lizard","Opossum", "Tree_shrew", "Rhabdomys", "Cow", "Sheep"))
+
+saveRDS(directory, "file_directory.rds")
+```
+
+# Extended Figure 1, 2
+## Lamprey
+```{r}
+Lamprey <- readRDS("../Species_Initial/Lamprey_initial.rds")
+Idents(Lamprey) <- "cell_class"
+
+# Set order for full object plotting
+Lamprey@meta.data$plotting <- factor(Lamprey@meta.data$cell_class, levels = c("RGC", "BP", "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+Idents(Lamprey) <- "plotting"
+Lamprey <- subset(Lamprey, plotting != c("Other"))
+
+# Generate DotPlot
+# LOC116941015 is POU6F2
+RGC_markers= c("LOC116941015", "RBPMS" )
+# LOC116939504 is VSX2
+# MSTRG.6810 is OTX2
+BC_markers=c("VSX2", "MSTRG.6810")
+# MSTRG.3969  LOC103091742 are variants of TFAP2B
+AC_markers=c("MSTRG.3969", "LOC103091742",  "GAD1", "SLC6A9")
+HC_markers=c("ONECUT1", "LHX1")
+# MSTRG.8796 is PDE6H, 
+Cone_markers=c("MSTRG.8796","MSTRG.9291")
+# MSTRG.9291 is a red opsin
+# MSTRG.9293 is RHO
+Rod_markers=c("MSTRG.9293")
+MG_markers=c("APOB")
+
+
+pdf("../Figures/Supp Fig 1/Lamprey.pdf", w=7, h=6, useDingbats = FALSE)
+DotPlot(Lamprey, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Cone_markers, Rod_markers, MG_markers), group.by = "plotting") + RotatedAxis() + NoLegend()
+dev.off()
+
+```
+
+## Lamprey - w/ types
+```{r}
+species <- "Lamprey"
+obj <- readRDS(paste0("../Species_Initial/", species, "_initial.rds"))
+Idents(obj) <- "cell_class"
+
+# Format to include RGC and BC type
+RGC_meta <- readRDS("../Metadata/RGC/LampreyRGC_int_v1_metadata.rds")
+BC_meta <- readRDS("../Metadata/BC/LampreyBC_int_v1_metadata.rds")
+
+obj@meta.data$plotting <- obj@meta.data$cell_class
+
+obj@meta.data[rownames(RGC_meta), "plotting"] <- paste0("RGC_", RGC_meta$type)
+obj@meta.data[rownames(BC_meta), "plotting"] <- paste0("BC_", BC_meta$type)
+
+# Remove RGCs, BCs that did not make final object, as well as "Other"
+Idents(obj) <- "plotting"
+obj <- subset(obj, plotting != c("RGC"))
+obj <- subset(obj, plotting != c("BP"))
+obj <- subset(obj, plotting != c("Other"))
+obj <- subset(obj, plotting != c("MicroG"))
+
+
+# Build dendrograms for RGC and BC alone
+obj_RGC <- subset(obj, cells = rownames(RGC_meta))
+obj_RGC <- BuildClusterTree(obj_RGC, reorder = TRUE)
+Idents(obj_RGC) <- "plotting"
+RGC_levels <- levels(Idents(obj_RGC))
+RGC_p <- SuppFigure_dendro(obj_RGC)
+
+obj_BC <- subset(obj, cells = rownames(BC_meta))
+Idents(obj_BC) <- "plotting"
+obj_BC <- BuildClusterTree(obj_BC, reorder = TRUE)
+BC_levels <- levels(Idents(obj_BC))
+BC_p <- SuppFigure_dendro(obj_BC)
+
+# Set order for full object plotting
+obj@meta.data$plotting <- factor(obj@meta.data$plotting, levels = c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+
+# Generate DotPlot
+# LOC116941015 is POU6F2
+RGC_markers= c("LOC116941015", "RBPMS" )
+# LOC116939504 is VSX2
+# MSTRG.6810 is OTX2
+BC_markers=c("VSX2", "MSTRG.6810")
+# MSTRG.3969  LOC103091742 are variants of TFAP2B
+AC_markers=c("MSTRG.3969", "LOC103091742",  "GAD1", "SLC6A9")
+HC_markers=c("ONECUT1", "LHX1")
+# MSTRG.8796 is PDE6H, 
+Cone_markers=c("MSTRG.8796","MSTRG.9291")
+# MSTRG.9291 is a red opsin
+# MSTRG.9293 is RHO
+Rod_markers=c("MSTRG.9293")
+MG_markers=c("APOB")
+
+dp <- DotPlot(obj, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Rod_markers, Cone_markers, MG_markers), group.by = "plotting", assay = "RNA") + RotatedAxis() + NoLegend()
+
+
+# Set dataframe for barplots
+class_df <- data.frame(table(obj@meta.data$plotting))
+rownames(class_df) <- class_df$Var1
+
+# Generate Heatmap
+hmap <- SuppFigure_hmap(obj, scale = FALSE)
+
+# Set parameters for plotting
+spacing = 850.46 / 936 / length(c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+bar_axis = .026
+top_gap = 4/936
+bottom_gap = 1 - 857 / 936
+dendro_gap = 30 / 936
+
+# All plots
+pdf(paste0("../Figures/Supp Fig 1/", species, "_v2.pdf"), w=11, h=13, useDingbats = FALSE)
+ggdraw() +
+  draw_plot(dp, x=.05, y=0, width = .7, height = 1) +
+  draw_plot(ClassBarPlot(class_df, RGC_levels, "gold"), x=0.73, y=0.065, width = .1, height = bar_axis + length(RGC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, BC_levels, "burlywood3"), x=.73, y=.065+length(RGC_levels)*spacing, width = .1, height = bar_axis+length(BC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, c("GabaAC", "GlyAC"), "sienna1"), x=.73, y= 1-top_gap-6*spacing-bar_axis, width = .1, height = bar_axis+2*spacing) +
+  draw_plot(hmap, x = .83, y = 0, width = .17, height = 1) +
+  draw_plot(RGC_p, x=0, y= bottom_gap - dendro_gap, width = .08, height = length(RGC_levels)*spacing + 2*dendro_gap) + 
+  draw_plot(BC_p, x=0, y=bottom_gap + length(RGC_levels)*spacing - dendro_gap, width = .08, height = length(BC_levels)*spacing + 2*dendro_gap) 
+dev.off()
+
+
+```
+
+## Zebrafish
+```{r}
+species <- "Zebrafish"
+obj <- readRDS(paste0("../Species_Initial/", species, "_initial.rds"))
+Idents(obj) <- "cell_class"
+
+# Format to include RGC and BC type
+RGC_meta <- readRDS("../Metadata/RGC/ZebrafishRGC_v1_metadata.rds")
+BC_meta <- readRDS("../Metadata/BC/ZebrafishBC_v3_metadata.rds")
+
+obj@meta.data$plotting <- obj@meta.data$cell_class
+
+obj@meta.data[rownames(RGC_meta), "plotting"] <- paste0("RGC_", RGC_meta$type)
+obj@meta.data[rownames(BC_meta), "plotting"] <- paste0("BC_", BC_meta$type)
+
+# Remove RGCs, BCs that did not make final object, as well as "Other"
+Idents(obj) <- "plotting"
+obj <- subset(obj, plotting != c("RGC"))
+obj <- subset(obj, plotting != c("BP"))
+obj <- subset(obj, plotting != c("Other"))
+obj <- subset(obj, plotting != c("MicroG"))
+
+
+# Build dendrograms for RGC and BC alone
+obj_RGC <- subset(obj, cells = rownames(RGC_meta))
+obj_RGC <- BuildClusterTree(obj_RGC, reorder = TRUE)
+Idents(obj_RGC) <- "plotting"
+RGC_levels <- levels(Idents(obj_RGC))
+RGC_p <- SuppFigure_dendro(obj_RGC)
+
+obj_BC <- subset(obj, cells = rownames(BC_meta))
+Idents(obj_BC) <- "plotting"
+obj_BC <- BuildClusterTree(obj_BC, reorder = TRUE)
+BC_levels <- levels(Idents(obj_BC))
+BC_p <- SuppFigure_dendro(obj_BC)
+
+# Set order for full object plotting
+obj@meta.data$plotting <- factor(obj@meta.data$plotting, levels = c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+
+# Generate DotPlot
+RGC_markers= c("RBPMS2B", "POU6F2", "THY1")
+BC_markers=c("VSX2", "PRKCA", "OTX2","VSX1")
+AC_markers=c("TFAP2A","GAD2", "SLC6A9")
+HC_markers=c("ONECUT1", "CALB1", "TPM3")
+Cone_markers=c("ARR3A","PDE6H")
+Rod_markers=c("RHO")
+MG_markers=c("GLULA", "APOEB")
+
+dp <- DotPlot(obj, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Rod_markers, Cone_markers, MG_markers), group.by = "plotting", assay = "RNA") + RotatedAxis() + NoLegend()
+
+
+# Set dataframe for barplots
+class_df <- data.frame(table(obj@meta.data$plotting))
+rownames(class_df) <- class_df$Var1
+
+# Generate Heatmap
+hmap <- SuppFigure_hmap(obj, scale = FALSE)
+
+# Set parameters for plotting
+spacing = 850.46 / 936 / length(c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+bar_axis = .026
+top_gap = 4/936
+bottom_gap = 1 - 857 / 936
+dendro_gap = 30 / 936
+
+# All plots
+pdf(paste0("../Figures/Supp Fig 1/", species, ".pdf"), w=11, h=13, useDingbats = FALSE)
+ggdraw() +
+  draw_plot(dp, x=.05, y=0, width = .6, height = 1) +
+  draw_plot(ClassBarPlot(class_df, RGC_levels, "gold"), x=0.63, y=0.065, width = .1, height = bar_axis + length(RGC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, BC_levels, "burlywood3"), x=.63, y=.065+length(RGC_levels)*spacing, width = .1, height = bar_axis+length(BC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, c("GabaAC", "GlyAC"), "sienna1"), x=.63, y= 1-top_gap-6*spacing-bar_axis, width = .1, height = bar_axis+2*spacing) +
+  draw_plot(hmap, x = .73, y = 0, width = .27, height = 1) +
+  draw_plot(RGC_p, x=0, y= bottom_gap - dendro_gap, width = .08, height = length(RGC_levels)*spacing + 2*dendro_gap) + 
+  draw_plot(BC_p, x=0, y=bottom_gap + length(RGC_levels)*spacing - dendro_gap, width = .08, height = length(BC_levels)*spacing + 2*dendro_gap) 
+dev.off()
+
+```
+
+## Lizard
+```{r}
+species <- "Lizard"
+obj <- readRDS(paste0("../Species_Initial/", species, "_initial.rds"))
+Idents(obj) <- "cell_class"
+
+# Format to include RGC and BC type
+RGC_meta <- readRDS("../Metadata/RGC/LizardRGC_int_v2_metadata.rds")
+BC_meta <- readRDS("../Metadata/BC/LizardBC_integrated_v1_metadata.rds")
+
+obj@meta.data$plotting <- obj@meta.data$cell_class
+
+obj@meta.data[rownames(RGC_meta), "plotting"] <- paste0("RGC_", RGC_meta$type)
+obj@meta.data[rownames(BC_meta), "plotting"] <- paste0("BC_", BC_meta$type)
+
+# Remove RGCs, BCs that did not make final object, as well as "Other"
+Idents(obj) <- "plotting"
+obj <- subset(obj, plotting != c("RGC"))
+obj <- subset(obj, plotting != c("BP"))
+obj <- subset(obj, plotting != c("Other"))
+obj <- subset(obj, plotting != c("MicroG"))
+
+
+# Build dendrograms for RGC and BC alone
+obj_RGC <- subset(obj, cells = rownames(RGC_meta))
+obj_RGC <- BuildClusterTree(obj_RGC, reorder = TRUE)
+Idents(obj_RGC) <- "plotting"
+RGC_levels <- levels(Idents(obj_RGC))
+RGC_p <- SuppFigure_dendro(obj_RGC)
+
+obj_BC <- subset(obj, cells = rownames(BC_meta))
+Idents(obj_BC) <- "plotting"
+obj_BC <- BuildClusterTree(obj_BC, reorder = TRUE)
+BC_levels <- levels(Idents(obj_BC))
+BC_p <- SuppFigure_dendro(obj_BC)
+
+# Set order for full object plotting
+obj@meta.data$plotting <- factor(obj@meta.data$plotting, levels = c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+
+# Generate DotPlot
+RGC_markers= c("RBPMS", "SLC17A6", "POU6F2")
+BC_markers=c("VSX2", "CABP5", "GRIK1", "OTX2", "PRKCA")
+AC_markers=c("TFAP2A", "GAD2", "SLC6A9")
+HC_markers=c("ONECUT1", "LHX1", "CALB1", "TPM3")
+Cone_markers=c("PDE6H", "CRX", "ARR3")
+Rod_markers=c("SAG", "PDC", "RHO")
+MG_markers=c("SLC1A3","RLBP1", "APOE")
+
+dp <- DotPlot(obj, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Rod_markers, Cone_markers, MG_markers), group.by = "plotting", assay = "RNA") + RotatedAxis() + NoLegend()
+
+
+# Set dataframe for barplots
+class_df <- data.frame(table(obj@meta.data$plotting))
+rownames(class_df) <- class_df$Var1
+
+# Generate Heatmap
+hmap <- SuppFigure_hmap(obj)
+
+# Set parameters for plotting
+spacing = 850.46 / 936 / length(c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+bar_axis = .026
+top_gap = 4/936
+bottom_gap = 1 - 857 / 936
+dendro_gap = 30 / 936
+
+# All plots
+pdf(paste0("../Figures/Supp Fig 1/", species, ".pdf"), w=11, h=13, useDingbats = FALSE)
+ggdraw() +
+  draw_plot(dp, x=.05, y=0, width = .7, height = 1) +
+  draw_plot(ClassBarPlot(class_df, RGC_levels, "gold"), x=0.73, y=0.065, width = .1, height = bar_axis + length(RGC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, BC_levels, "burlywood3"), x=.73, y=.065+length(RGC_levels)*spacing, width = .1, height = bar_axis+length(BC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, c("GabaAC", "GlyAC"), "sienna1"), x=.73, y= 1-top_gap-6*spacing-bar_axis, width = .1, height = bar_axis+2*spacing) +
+  draw_plot(hmap, x = .83, y = 0, width = .17, height = 1) +
+  draw_plot(RGC_p, x=0, y= bottom_gap - dendro_gap, width = .08, height = length(RGC_levels)*spacing + 2*dendro_gap) + 
+  draw_plot(BC_p, x=0, y=bottom_gap + length(RGC_levels)*spacing - dendro_gap, width = .08, height = length(BC_levels)*spacing + 2*dendro_gap) 
+dev.off()
+
+```
+
+
+## Chicken
+```{r}
+Chicken <- readRDS("../Species_Initial/Chicken_initial.rds")
+Idents(Chicken) <- "cell_class"
+
+bc <- WhichCells(Chicken, idents = "BP")
+rgc <- WhichCells(Chicken, idents = "RGC")
+
+# Format to include RGC and BC type
+Chicken@meta.data$plotting <- Chicken@meta.data$cell_class
+Chicken@meta.data[bc, "plotting"] <- as.vector(Chicken@meta.data[bc, "annotated"])
+Chicken@meta.data[rgc, "plotting"] <- as.vector(Chicken@meta.data[rgc, "annotated"])
+
+# Remove RGCs, BCs that did not make final object, as well as "Other"
+Idents(Chicken) <- "plotting"
+Chicken <- subset(Chicken, plotting != c("RGC"))
+Chicken <- subset(Chicken, plotting != c("BP"))
+Chicken <- subset(Chicken, plotting != c("Other"))
+
+# Build dendrograms for RGC and BC alone
+Chicken_RGC <- subset(Chicken, cells = rgc)
+Chicken_RGC <- BuildClusterTree(Chicken_RGC, reorder = TRUE)
+RGC_levels <- levels(Idents(Chicken_RGC))
+RGC_p <- SuppFigure_dendro(Chicken_RGC)
+
+Chicken_BC <- subset(Chicken, cells = bc)
+Chicken_BC <- BuildClusterTree(Chicken_BC, reorder = TRUE)
+BC_levels <- levels(Idents(Chicken_BC))
+BC_p <- SuppFigure_dendro(Chicken_BC)
+
+# Set order for full object plotting
+Chicken@meta.data$plotting <- factor(Chicken@meta.data$plotting, levels = c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+
+# Generate DotPlot
+BC_markers=c("VSX1","VSX2", "GRIK1", "OTX2")
+AC_markers=c("TFAP2A","TFAP2B","GAD1", "GAD2", "SLC6A9")
+MG_markers=c("APOE","RLBP1")
+HC_markers=c("ONECUT1", "ONECUT2")
+Cone_markers=c("ARR3","RS1", "GNGT2")
+Rod_markers=c("RHO", "PDE6B", "PDC")
+RGC_markers= c("RBPMS","RBPMS2", "POU4F1", "THY1")
+
+dp <- DotPlot(Chicken, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Cone_markers, Rod_markers, MG_markers), group.by = "plotting") + RotatedAxis() #+ NoLegend()
+
+
+# Set dataframe for barplots
+class_df <- data.frame(table(Chicken@meta.data$plotting))
+rownames(class_df) <- class_df$Var1
+
+# Generate h=Heatmap
+hmap <- SuppFigure_hmap(Chicken, scale = TRUE)
+
+# Set parameters for plotting
+spacing = 850.46 / 936 / length(c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+bar_axis = .026
+top_gap = 4/936
+bottom_gap = 1 - 857 / 936
+dendro_gap = 30 / 936
+
+# All plots
+pdf("../Figures/Supp Fig 1/Chicken.pdf", w=11, h=13, useDingbats = FALSE)
+ggdraw() +
+  draw_plot(dp, x=.05, y=0, width = .7, height = 1) +
+  draw_plot(ClassBarPlot(class_df, RGC_levels, "gold"), x=0.73, y=0.065, width = .1, height = bar_axis + length(RGC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, BC_levels, "burlywood3"), x=.73, y=.065+length(RGC_levels)*spacing, width = .1, height = bar_axis+length(BC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, c("GabaAC", "GlyAC"), "sienna1"), x=.73, y= 1-top_gap-6*spacing-bar_axis, width = .1, height = bar_axis+2*spacing) +
+  draw_plot(ClassBarPlot(class_df, c("Rod", "Cone"), "skyblue2"), x=.73, y= 1-top_gap-3*spacing-bar_axis, width = .1, height = .05) +
+  draw_plot(hmap, x = .83, y = 0, width = .17, height = 1) +
+  draw_plot(RGC_p, x=0, y= bottom_gap - dendro_gap, width = .08, height = length(RGC_levels)*spacing + 2*dendro_gap) + 
+  draw_plot(BC_p, x=0, y=bottom_gap + length(RGC_levels)*spacing - dendro_gap, width = .08, height = length(BC_levels)*spacing + 2*dendro_gap) 
+dev.off()
+
+```
+
+## Lizard
+```{r}
+species <- "Lizard"
+obj <- readRDS(paste0("../Species_Initial/", species, "_initial.rds"))
+Idents(obj) <- "cell_class"
+
+# Format to include RGC and BC type
+RGC_meta <- readRDS("../Metadata/RGC/LizardRGC_int_v2_metadata.rds")
+BC_meta <- readRDS("../Metadata/BC/LizardBC_integrated_v1_metadata.rds")
+
+obj@meta.data$plotting <- obj@meta.data$cell_class
+
+obj@meta.data[rownames(RGC_meta), "plotting"] <- paste0("RGC_", RGC_meta$type)
+obj@meta.data[rownames(BC_meta), "plotting"] <- paste0("BC_", BC_meta$type)
+
+# Remove RGCs, BCs that did not make final object, as well as "Other"
+Idents(obj) <- "plotting"
+obj <- subset(obj, plotting != c("RGC"))
+obj <- subset(obj, plotting != c("BP"))
+obj <- subset(obj, plotting != c("Other"))
+obj <- subset(obj, plotting != c("MicroG"))
+
+
+# Build dendrograms for RGC and BC alone
+obj_RGC <- subset(obj, cells = rownames(RGC_meta))
+obj_RGC <- BuildClusterTree(obj_RGC, reorder = TRUE)
+Idents(obj_RGC) <- "plotting"
+RGC_levels <- levels(Idents(obj_RGC))
+RGC_p <- SuppFigure_dendro(obj_RGC)
+
+obj_BC <- subset(obj, cells = rownames(BC_meta))
+Idents(obj_BC) <- "plotting"
+obj_BC <- BuildClusterTree(obj_BC, reorder = TRUE)
+BC_levels <- levels(Idents(obj_BC))
+BC_p <- SuppFigure_dendro(obj_BC)
+
+# Set order for full object plotting
+obj@meta.data$plotting <- factor(obj@meta.data$plotting, levels = c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+
+# Generate DotPlot
+RGC_markers= c("RBPMS", "SLC17A6", "POU6F2")
+BC_markers=c("VSX2", "CABP5", "GRIK1", "OTX2", "PRKCA")
+AC_markers=c("TFAP2A", "GAD2", "SLC6A9")
+HC_markers=c("ONECUT1", "LHX1", "CALB1", "TPM3")
+Cone_markers=c("PDE6H", "CRX", "ARR3")
+Rod_markers=c("SAG", "PDC", "RHO")
+MG_markers=c("SLC1A3","RLBP1", "APOE")
+
+dp <- DotPlot(obj, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Rod_markers, Cone_markers, MG_markers), group.by = "plotting", assay = "RNA") + RotatedAxis() #+ NoLegend()
+
+
+# Set dataframe for barplots
+class_df <- data.frame(table(obj@meta.data$plotting))
+rownames(class_df) <- class_df$Var1
+
+# Generate Heatmap
+hmap <- SuppFigure_hmap(obj, scale = TRUE)
+
+# Set parameters for plotting
+spacing = 850.46 / 936 / length(c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+bar_axis = .026
+top_gap = 4/936
+bottom_gap = 1 - 857 / 936
+dendro_gap = 30 / 936
+
+# All plots
+pdf(paste0("../Figures/Supp Fig 1/", species, ".pdf"), w=11, h=13, useDingbats = FALSE)
+ggdraw() +
+  draw_plot(dp, x=.05, y=0, width = .7, height = 1) +
+  draw_plot(ClassBarPlot(class_df, RGC_levels, "gold"), x=0.73, y=0.065, width = .1, height = bar_axis + length(RGC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, BC_levels, "burlywood3"), x=.73, y=.065+length(RGC_levels)*spacing, width = .1, height = bar_axis+length(BC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, c("GabaAC", "GlyAC"), "sienna1"), x=.73, y= 1-top_gap-6*spacing-bar_axis, width = .1, height = bar_axis+2*spacing) +
+  draw_plot(hmap, x = .83, y = 0, width = .17, height = 1) +
+  draw_plot(RGC_p, x=0, y= bottom_gap - dendro_gap, width = .08, height = length(RGC_levels)*spacing + 2*dendro_gap) + 
+  draw_plot(BC_p, x=0, y=bottom_gap + length(RGC_levels)*spacing - dendro_gap, width = .08, height = length(BC_levels)*spacing + 2*dendro_gap) 
+dev.off()
+
+```
+
+
+
+## Opossum
+```{r}
+species <- "Opossum"
+obj <- readRDS(paste0("../Species_Initial/", species, "_initial.rds"))
+Idents(obj) <- "cell_class"
+
+# Format to include RGC and BC type
+RGC_meta <- readRDS("../Metadata/RGC/OpossumRGC_int_v4_metadata.rds")
+BC_meta <- readRDS("../Metadata/BC/OpossumBC_int_v3_metadata.rds")
+
+obj@meta.data$plotting <- obj@meta.data$cell_class
+
+obj@meta.data[rownames(RGC_meta), "plotting"] <- paste0("RGC_", RGC_meta$type)
+obj@meta.data[rownames(BC_meta), "plotting"] <- paste0("BC_", BC_meta$type)
+
+# Remove RGCs, BCs that did not make final object, as well as "Other"
+Idents(obj) <- "plotting"
+obj <- subset(obj, plotting != c("RGC"))
+obj <- subset(obj, plotting != c("BP"))
+obj <- subset(obj, plotting != c("Other"))
+obj <- subset(obj, plotting != c("MicroG"))
+
+
+# Build dendrograms for RGC and BC alone
+obj_RGC <- subset(obj, cells = rownames(RGC_meta))
+obj_RGC <- BuildClusterTree(obj_RGC, reorder = TRUE)
+Idents(obj_RGC) <- "plotting"
+RGC_levels <- levels(Idents(obj_RGC))
+RGC_p <- SuppFigure_dendro(obj_RGC)
+
+obj_BC <- subset(obj, cells = rownames(BC_meta))
+Idents(obj_BC) <- "plotting"
+obj_BC <- BuildClusterTree(obj_BC, reorder = TRUE)
+BC_levels <- levels(Idents(obj_BC))
+BC_p <- SuppFigure_dendro(obj_BC)
+
+# Set order for full object plotting
+obj@meta.data$plotting <- factor(obj@meta.data$plotting, levels = c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+
+# Generate DotPlot
+RGC_markers= c("RBPMS2","RBPMS", "SLC17A6", "THY1")
+BC_markers=c("VSX2", "OTX2", "GRM6", "VSX1", "CABP5", "GRIK1")
+AC_markers=c("TFAP2A", "TFAP2B", "TFAP2C", "GAD1", "GAD2", "SLC6A9")
+HC_markers=c("ONECUT1", "LHX1", "CALB1", "TPM3")
+Cone_markers=c("PDE6H", "CRX", "ARR3")
+Rod_markers=c("SAG", "PDC", "RHO")
+MG_markers=c("SLC1A3","RLBP1", "APOE")
+
+dp <- DotPlot(obj, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Rod_markers, Cone_markers, MG_markers), group.by = "plotting", assay = "RNA") + RotatedAxis() + NoLegend()
+
+
+# Set dataframe for barplots
+class_df <- data.frame(table(obj@meta.data$plotting))
+rownames(class_df) <- class_df$Var1
+
+# Generate Heatmap
+hmap <- SuppFigure_hmap(obj, scale = FALSE)
+
+# Set parameters for plotting
+spacing = 850.46 / 936 / length(c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+bar_axis = .026
+top_gap = 4/936
+bottom_gap = 1 - 857 / 936
+dendro_gap = 30 / 936
+
+# All plots
+pdf(paste0("../Figures/Supp Fig 1/", species, ".pdf"), w=11, h=13, useDingbats = FALSE)
+ggdraw() +
+  draw_plot(dp, x=.05, y=0, width = .7, height = 1) +
+  draw_plot(ClassBarPlot(class_df, RGC_levels, "gold"), x=0.73, y=0.065, width = .1, height = bar_axis + length(RGC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, BC_levels, "burlywood3"), x=.73, y=.065+length(RGC_levels)*spacing, width = .1, height = bar_axis+length(BC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, c("GabaAC", "GlyAC"), "sienna1"), x=.73, y= 1-top_gap-6*spacing-bar_axis, width = .1, height = bar_axis+2*spacing) +
+  draw_plot(hmap, x = .83, y = 0, width = .17, height = 1) +
+  draw_plot(RGC_p, x=0, y= bottom_gap - dendro_gap, width = .08, height = length(RGC_levels)*spacing + 2*dendro_gap) + 
+  draw_plot(BC_p, x=0, y=bottom_gap + length(RGC_levels)*spacing - dendro_gap, width = .08, height = length(BC_levels)*spacing + 2*dendro_gap) 
+dev.off()
+
+```
+
+## Pig
+```{r}
+species <- "Pig"
+obj <- readRDS(paste0("../Species_Initial/", species, "_initial.rds"))
+Idents(obj) <- "cell_class"
+
+# Format to include RGC and BC type
+RGC_meta <- readRDS("../Metadata/RGC/PigRGC_integrated_v2_metadata.rds")
+BC_meta <- readRDS("../Metadata/BC/PigBC_integrated_v3_metadata.rds")
+
+obj@meta.data$plotting <- obj@meta.data$cell_class
+
+obj@meta.data[rownames(RGC_meta), "plotting"] <- paste0("RGC_", RGC_meta$type)
+obj@meta.data[rownames(BC_meta), "plotting"] <- paste0("BC_", BC_meta$type)
+
+# Remove RGCs, BCs that did not make final object, as well as "Other"
+Idents(obj) <- "plotting"
+obj <- subset(obj, plotting != c("RGC"))
+obj <- subset(obj, plotting != c("BP"))
+obj <- subset(obj, plotting != c("Other"))
+obj <- subset(obj, plotting != c("MicroG"))
+
+
+# Build dendrograms for RGC and BC alone
+obj_RGC <- subset(obj, cells = rownames(RGC_meta))
+obj_RGC <- BuildClusterTree(obj_RGC, reorder = TRUE)
+Idents(obj_RGC) <- "plotting"
+RGC_levels <- levels(Idents(obj_RGC))
+RGC_p <- SuppFigure_dendro(obj_RGC)
+
+obj_BC <- subset(obj, cells = rownames(BC_meta))
+Idents(obj_BC) <- "plotting"
+obj_BC <- BuildClusterTree(obj_BC, reorder = TRUE)
+BC_levels <- levels(Idents(obj_BC))
+BC_p <- SuppFigure_dendro(obj_BC)
+
+# Set order for full object plotting
+obj@meta.data$plotting <- factor(obj@meta.data$plotting, levels = c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+
+# Generate DotPlot
+RGC_markers= c("RBPMS2","RBPMS", "SLC17A6", "THY1", "NEFL", "NEFM")
+BC_markers=c("VSX2", "OTX2", "GRM6", "VSX1", "CABP5", "GRIK1")
+AC_markers=c("TFAP2A", "TFAP2B", "TFAP2C", "GAD1", "GAD2", "SLC6A9")
+HC_markers=c("ONECUT1", "LHX1", "CALB1", "TPM3")
+Cone_markers=c("PDE6H", "CRX", "ARR3")
+Rod_markers=c("SAG", "PDC", "RHO")
+MG_markers=c("SLC1A3","RLBP1", "APOE")
+
+dp <- DotPlot(obj, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Rod_markers, Cone_markers, MG_markers), group.by = "plotting", assay = "RNA") + RotatedAxis() + NoLegend()
+
+
+# Set dataframe for barplots
+class_df <- data.frame(table(obj@meta.data$plotting))
+rownames(class_df) <- class_df$Var1
+
+# Generate Heatmap
+hmap <- SuppFigure_hmap(obj, scale = FALSE)
+
+# Set parameters for plotting
+spacing = 850.46 / 936 / length(c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+bar_axis = .026
+top_gap = 4/936
+bottom_gap = 1 - 857 / 936
+dendro_gap = 30 / 936
+
+# All plots
+pdf(paste0("../Figures/Supp Fig 1/", species, ".pdf"), w=11, h=13, useDingbats = FALSE)
+ggdraw() +
+  draw_plot(dp, x=.05, y=0, width = .7, height = 1) +
+  draw_plot(ClassBarPlot(class_df, RGC_levels, "gold"), x=0.73, y=0.065, width = .1, height = bar_axis + length(RGC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, BC_levels, "burlywood3"), x=.73, y=.065+length(RGC_levels)*spacing, width = .1, height = bar_axis+length(BC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, c("GabaAC", "GlyAC"), "sienna1"), x=.73, y= 1-top_gap-6*spacing-bar_axis, width = .1, height = bar_axis+2*spacing) +
+  draw_plot(hmap, x = .83, y = 0, width = .17, height = 1) +
+  draw_plot(RGC_p, x=0, y= bottom_gap - dendro_gap, width = .08, height = length(RGC_levels)*spacing + 2*dendro_gap) + 
+  draw_plot(BC_p, x=0, y=bottom_gap + length(RGC_levels)*spacing - dendro_gap, width = .08, height = length(BC_levels)*spacing + 2*dendro_gap) 
+dev.off()
+
+```
+
+## Ferret
+```{r}
+species <- "Ferret"
+obj <- readRDS(paste0("../Species_Initial/", species, "_initial.rds"))
+Idents(obj) <- "cell_class"
+
+# Format to include RGC and BC type
+RGC_meta <- readRDS("../Metadata/RGC/FerretRGC_integrated_v2_metadata.rds")
+BC_meta <- readRDS("../Metadata/BC/FerretBC_integrated_v4_metadata.rds")
+
+obj@meta.data$plotting <- obj@meta.data$cell_class
+
+obj@meta.data[rownames(RGC_meta), "plotting"] <- paste0("RGC_", RGC_meta$type)
+obj@meta.data[rownames(BC_meta), "plotting"] <- paste0("BC_", BC_meta$type)
+
+# Remove RGCs, BCs that did not make final object, as well as "Other"
+Idents(obj) <- "plotting"
+obj <- subset(obj, plotting %in% setdiff(unique(obj$plotting),  c("RGC", "BP", "Other", "MicroG")))
+
+
+# Build dendrograms for RGC and BC alone
+Idents(obj) <-
+obj_RGC <- subset(obj, cells = rownames(RGC_meta))
+obj_RGC <- BuildClusterTree(obj_RGC, reorder = TRUE)
+Idents(obj_RGC) <- "plotting"
+RGC_levels <- levels(Idents(obj_RGC))
+RGC_p <- SuppFigure_dendro(obj_RGC)
+
+obj_BC <- subset(obj, cells = rownames(BC_meta))
+Idents(obj_BC) <- "plotting"
+obj_BC <- BuildClusterTree(obj_BC, reorder = TRUE)
+BC_levels <- levels(Idents(obj_BC))
+BC_p <- SuppFigure_dendro(obj_BC)
+
+# Set order for full object plotting
+obj@meta.data$plotting <- factor(obj@meta.data$plotting, levels = c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+
+# Generate DotPlot
+RGC_markers= c("RBPMS2","RBPMS", "SLC17A6", "THY1", "NEFL", "NEFM")
+BC_markers=c("VSX2", "OTX2", "GRM6", "VSX1", "CABP5", "GRIK1")
+AC_markers=c("TFAP2A", "TFAP2B", "TFAP2C", "GAD1", "GAD2", "SLC6A9")
+HC_markers=c("ONECUT1", "LHX1", "CALB1", "TPM3")
+Cone_markers=c("PDE6H", "CRX", "ARR3")
+Rod_markers=c("SAG", "PDC", "RHO")
+MG_markers=c("SLC1A3","RLBP1", "APOE")
+
+dp <- DotPlot(obj, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Rod_markers, Cone_markers, MG_markers), group.by = "plotting", assay = "RNA") + RotatedAxis() + NoLegend()
+
+
+# Set dataframe for barplots
+class_df <- data.frame(table(obj@meta.data$plotting))
+rownames(class_df) <- class_df$Var1
+
+# Generate Heatmap
+hmap <- SuppFigure_hmap(obj, scale = FALSE)
+
+# Set parameters for plotting
+spacing = 850.46 / 936 / length(c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+bar_axis = .026
+top_gap = 4/936
+bottom_gap = 1 - 857 / 936
+dendro_gap = 30 / 936
+
+# All plots
+pdf(paste0("../Figures/Supp Fig 1/", species, ".pdf"), w=11, h=13, useDingbats = FALSE)
+ggdraw() +
+  draw_plot(dp, x=.05, y=0, width = .7, height = 1) +
+  draw_plot(ClassBarPlot(class_df, RGC_levels, "gold"), x=0.73, y=0.065, width = .1, height = bar_axis + length(RGC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, BC_levels, "burlywood3"), x=.73, y=.065+length(RGC_levels)*spacing, width = .1, height = bar_axis+length(BC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, c("GabaAC", "GlyAC"), "sienna1"), x=.73, y= 1-top_gap-6*spacing-bar_axis, width = .1, height = bar_axis+2*spacing) +
+  draw_plot(hmap, x = .83, y = 0, width = .17, height = 1) +
+  draw_plot(RGC_p, x=0, y= bottom_gap - dendro_gap, width = .08, height = length(RGC_levels)*spacing + 2*dendro_gap) + 
+  draw_plot(BC_p, x=0, y=bottom_gap + length(RGC_levels)*spacing - dendro_gap, width = .08, height = length(BC_levels)*spacing + 2*dendro_gap) 
+dev.off()
+
+```
+
+
+## Cow
+```{r}
+species <- "Cow"
+obj <- readRDS(paste0("../Species_Initial/", species, "_initial.rds"))
+Idents(obj) <- "cell_class"
+
+# Format to include RGC and BC type
+BC_meta <- readRDS("../Metadata/BC/CowBC_integrated_v3_metadata.rds")
+
+obj@meta.data$plotting <- obj@meta.data$cell_class
+
+obj@meta.data[rownames(BC_meta), "plotting"] <- paste0("BC_", BC_meta$type)
+
+# Remove BCs that did not make final object, as well as "Other"
+Idents(obj) <- "plotting"
+obj <- subset(obj, plotting != c("BP"))
+obj <- subset(obj, plotting != c("Other"))
+obj <- subset(obj, plotting != c("MicroG"))
+
+
+# Build dendrograms for RGC and BC alone
+obj_BC <- subset(obj, cells = rownames(BC_meta))
+Idents(obj_BC) <- "plotting"
+obj_BC <- BuildClusterTree(obj_BC, reorder = TRUE)
+BC_levels <- levels(Idents(obj_BC))
+BC_p <- SuppFigure_dendro(obj_BC)
+
+# Set order for full object plotting
+obj@meta.data$plotting <- factor(obj@meta.data$plotting, levels = c("RGC", BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+
+# Generate DotPlot
+RGC_markers= c("RBPMS2","RBPMS", "SLC17A6", "THY1", "NEFL", "NEFM")
+BC_markers=c("VSX2", "OTX2", "GRM6", "VSX1", "CABP5", "GRIK1")
+AC_markers=c("TFAP2A", "TFAP2B", "TFAP2C", "GAD1", "GAD2", "SLC6A9")
+HC_markers=c("ONECUT1", "LHX1", "CALB1", "TPM3")
+Cone_markers=c("PDE6H", "CRX", "ARR3")
+Rod_markers=c("SAG", "PDC", "RHO")
+MG_markers=c("SLC1A3","RLBP1", "APOE")
+
+
+dp <- DotPlot(obj, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Rod_markers, Cone_markers, MG_markers), group.by = "plotting", assay = "RNA") + RotatedAxis() + NoLegend()
+
+
+# Set dataframe for barplots
+class_df <- data.frame(table(obj@meta.data$plotting))
+rownames(class_df) <- class_df$Var1
+
+# Generate Heatmap
+hmap <- SuppFigure_hmap(obj, RGC = FALSE, scale = FALSE)
+
+# Set parameters for plotting
+spacing = 850.46 / 936 / length(c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+bar_axis = .026
+top_gap = 4/936
+bottom_gap = 1 - 857 / 936
+dendro_gap = 30 / 936
+
+# All plots
+pdf(paste0("../Figures/Supp Fig 1/", species, ".pdf"), w=11, h=13, useDingbats = FALSE)
+ggdraw() +
+  draw_plot(dp, x=.05, y=0, width = .7, height = 1) +
+  draw_plot(ClassBarPlot(class_df, BC_levels, "burlywood3"), x=.73, y=.065+length(RGC_levels)*spacing, width = .1, height = bar_axis+length(BC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, c("GabaAC", "GlyAC"), "sienna1"), x=.73, y= 1-top_gap-6*spacing-bar_axis, width = .1, height = bar_axis+2*spacing) +
+  draw_plot(hmap, x = .83, y = 0, width = .17, height = 1) +
+  draw_plot(BC_p, x=0, y=bottom_gap + length(RGC_levels)*spacing - dendro_gap, width = .08, height = length(BC_levels)*spacing + 2*dendro_gap) 
+dev.off()
+
+```
+
+## Sheep
+```{r}
+species <- "Sheep"
+obj <- readRDS(paste0("../Species_Initial/", species, "_initial.rds"))
+Idents(obj) <- "cell_class"
+
+# Format to include RGC and BC type
+RGC_meta <- readRDS("../Metadata/RGC/SheepRGC_int_v2_metadata.rds")
+BC_meta <- readRDS("../Metadata/BC/SheepBC_integrated_v3_metadata.rds")
+
+obj@meta.data$plotting <- obj@meta.data$cell_class
+
+obj@meta.data[rownames(RGC_meta), "plotting"] <- paste0("RGC_", RGC_meta$type)
+obj@meta.data[rownames(BC_meta), "plotting"] <- paste0("BC_", BC_meta$type)
+
+# Remove RGCs, BCs that did not make final object, as well as "Other"
+Idents(obj) <- "plotting"
+obj <- subset(obj, plotting != c("RGC"))
+obj <- subset(obj, plotting != c("BP"))
+obj <- subset(obj, plotting != c("Other"))
+obj <- subset(obj, plotting != c("MicroG"))
+
+
+# Build dendrograms for RGC and BC alone
+obj_RGC <- subset(obj, cells = rownames(RGC_meta))
+obj_RGC <- BuildClusterTree(obj_RGC, reorder = TRUE)
+Idents(obj_RGC) <- "plotting"
+RGC_levels <- levels(Idents(obj_RGC))
+RGC_p <- SuppFigure_dendro(obj_RGC)
+
+obj_BC <- subset(obj, cells = rownames(BC_meta))
+Idents(obj_BC) <- "plotting"
+obj_BC <- BuildClusterTree(obj_BC, reorder = TRUE)
+BC_levels <- levels(Idents(obj_BC))
+BC_p <- SuppFigure_dendro(obj_BC)
+
+# Set order for full object plotting
+obj@meta.data$plotting <- factor(obj@meta.data$plotting, levels = c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+
+# Generate DotPlot
+RGC_markers= c("RBPMS2","RBPMS", "SLC17A6", "THY1", "NEFL", "NEFM")
+BC_markers=c("VSX2", "OTX2", "GRM6", "VSX1", "CABP5", "GRIK1")
+AC_markers=c("TFAP2A", "TFAP2B", "TFAP2C", "GAD1", "GAD2", "SLC6A9")
+HC_markers=c("ONECUT1", "LHX1", "CALB1", "TPM3")
+Cone_markers=c("PDE6H", "CRX", "ARR3")
+Rod_markers=c("SAG", "PDC", "RHO")
+MG_markers=c("SLC1A3","RLBP1", "APOE")
+
+dp <- DotPlot(obj, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Rod_markers, Cone_markers, MG_markers), group.by = "plotting", assay = "RNA") + RotatedAxis() + NoLegend()
+
+
+# Set dataframe for barplots
+class_df <- data.frame(table(obj@meta.data$plotting))
+rownames(class_df) <- class_df$Var1
+
+# Generate Heatmap
+hmap <- SuppFigure_hmap(obj, scale = FALSE)
+
+# Set parameters for plotting
+spacing = 850.46 / 936 / length(c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+bar_axis = .026
+top_gap = 4/936
+bottom_gap = 1 - 857 / 936
+dendro_gap = 30 / 936
+
+# All plots
+pdf(paste0("../Figures/Supp Fig 1/", species, ".pdf"), w=11, h=13, useDingbats = FALSE)
+ggdraw() +
+  draw_plot(dp, x=.05, y=0, width = .7, height = 1) +
+  draw_plot(ClassBarPlot(class_df, RGC_levels, "gold"), x=0.73, y=0.065, width = .1, height = bar_axis + length(RGC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, BC_levels, "burlywood3"), x=.73, y=.065+length(RGC_levels)*spacing, width = .1, height = bar_axis+length(BC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, c("GabaAC", "GlyAC"), "sienna1"), x=.73, y= 1-top_gap-6*spacing-bar_axis, width = .1, height = bar_axis+2*spacing) +
+  draw_plot(hmap, x = .83, y = 0, width = .17, height = 1) +
+  draw_plot(RGC_p, x=0, y= bottom_gap - dendro_gap, width = .08, height = length(RGC_levels)*spacing + 2*dendro_gap) + 
+  draw_plot(BC_p, x=0, y=bottom_gap + length(RGC_levels)*spacing - dendro_gap, width = .08, height = length(BC_levels)*spacing + 2*dendro_gap) 
+dev.off()
+
+```
+
+## Peromyscus
+```{r}
+Peromycus <- readRDS("../Species_Initial/Peromyscus_initial.rds")
+DefaultAssay(Peromycus) <- "RNA"
+Idents(Peromycus) <- "cell_class"
+
+# Format to include RGC and BC type
+RGC_meta <- readRDS("../Metadata/RGC/PeromyscusRGC_integrated_v3_metadata.rds")
+BC_meta <- readRDS("../Metadata/BC/PeromyscusBC_integrated_v3_metadata.rds")
+
+Peromycus@meta.data$plotting <- Peromycus@meta.data$cell_class
+
+Peromycus@meta.data[rownames(RGC_meta), "plotting"] <- paste0("RGC_", RGC_meta$type)
+Peromycus@meta.data[rownames(BC_meta), "plotting"] <- paste0("BC_", BC_meta$type)
+
+# Remove RGCs, BCs that did not make final object, as well as "Other"
+Idents(Peromycus) <- "plotting"
+Peromycus <- subset(Peromycus, plotting %in% setdiff(unique(Peromycus$plotting), c("RGC", "BP", "Other", "MicroG")) )
+
+
+# Build dendrograms for RGC and BC alone
+Idents(Peromycus) <- "plotting"
+Peromycus<-FindVariableFeatures(Peromycus)
+Peromycus_RGC <- subset(Peromycus, cells = rownames(RGC_meta))
+Peromycus_RGC <- BuildClusterTree(Peromycus_RGC, reorder = TRUE)
+RGC_levels <- levels(Idents(Peromycus_RGC))
+RGC_p <- SuppFigure_dendro(Peromycus_RGC)
+
+Peromycus_BC <- subset(Peromycus, cells = rownames(BC_meta))
+Peromycus_BC <- BuildClusterTree(Peromycus_BC, reorder = TRUE)
+BC_levels <- levels(Idents(Peromycus_BC))
+BC_p <- SuppFigure_dendro(Peromycus_BC)
+
+# Set order for full object plotting
+Peromycus@meta.data$plotting <- factor(Peromycus@meta.data$plotting, levels = c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+
+# Generate DotPlot
+RGC_markers= c("RBPMS","RBPMS2", "THY1")
+BC_markers=c("VSX2", "OTX2", "GRIK1")
+AC_markers=c("TFAP2A","TFAP2B","GAD1","GAD2","SLC6A9")
+HC_markers=c("ONECUT1", "ONECUT2")
+Rod_markers= c("SAG", "RHO")
+Cone_markers= c("PDE6H", "CRX", "ARR3")
+MG_markers=c("RLBP1")
+
+Idents(Peromycus) <- "plotting"
+dp <- DotPlot(Peromycus, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Rod_markers, Cone_markers, MG_markers), group.by = "plotting", assay = "RNA") + RotatedAxis() + NoLegend()
+
+
+# Set dataframe for barplots
+class_df <- data.frame(table(Peromycus@meta.data$plotting))
+rownames(class_df) <- class_df$Var1
+
+# Generate Heatmap
+hmap <- SuppFigure_hmap(Peromycus, scale = FALSE)
+
+# Set parameters for plotting
+spacing = 850.46 / 936 / length(c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+bar_axis = .026
+top_gap = 4/936
+bottom_gap = 1 - 857 / 936
+dendro_gap = 30 / 936
+
+# All plots
+pdf("../Figures/Supp Fig 1/Peromycus.pdf", w=11, h=13, useDingbats = FALSE)
+ggdraw() +
+  draw_plot(dp, x=.05, y=0, width = .7, height = 1) +
+  draw_plot(ClassBarPlot(class_df, RGC_levels, "gold"), x=0.73, y=0.065, width = .1, height = bar_axis + length(RGC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, BC_levels, "burlywood3"), x=.73, y=.065+length(RGC_levels)*spacing, width = .1, height = bar_axis+length(BC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, c("GabaAC", "GlyAC"), "sienna1"), x=.73, y= 1-top_gap-6*spacing-bar_axis, width = .1, height = bar_axis+2*spacing) +
+  draw_plot(ClassBarPlot(class_df, c("Rod", "Cone"), "skyblue2"), x=.73, y= 1-top_gap-3*spacing-bar_axis, width = .1, height = .05) +
+  draw_plot(hmap, x = .83, y = 0, width = .17, height = 1) +
+  draw_plot(RGC_p, x=0, y= bottom_gap - dendro_gap, width = .08, height = length(RGC_levels)*spacing + 2*dendro_gap) + 
+  draw_plot(BC_p, x=0, y=bottom_gap + length(RGC_levels)*spacing - dendro_gap, width = .08, height = length(BC_levels)*spacing + 2*dendro_gap) 
+dev.off()
+
+```
+
+
+## Rhabdomys
+```{r}
+species <- "Rhabdomys"
+obj <- readRDS(paste0("../Species_Initial/", species, "_initial.rds"))
+Idents(obj) <- "cell_class"
+
+# Format to include RGC and BC type
+RGC_meta <- readRDS("../Metadata/RGC/RhabdomysRGC_int_v2_metadata.rds")
+BC_meta <- readRDS("../Metadata/BC/RhabdomysBC_int_v2_metadata.rds")
+
+obj@meta.data$plotting <- obj@meta.data$cell_class
+
+obj@meta.data[rownames(RGC_meta), "plotting"] <- paste0("RGC_", RGC_meta$type)
+obj@meta.data[rownames(BC_meta), "plotting"] <- paste0("BC_", BC_meta$type)
+
+# Remove RGCs, BCs that did not make final object, as well as "Other"
+Idents(obj) <- "plotting"
+obj <- subset(obj, plotting != c("RGC"))
+obj <- subset(obj, plotting != c("BP"))
+obj <- subset(obj, plotting != c("Other"))
+obj <- subset(obj, plotting != c("MicroG"))
+
+
+# Build dendrograms for RGC and BC alone
+obj_RGC <- subset(obj, cells = rownames(RGC_meta))
+obj_RGC <- BuildClusterTree(obj_RGC, reorder = TRUE)
+Idents(obj_RGC) <- "plotting"
+RGC_levels <- levels(Idents(obj_RGC))
+RGC_p <- SuppFigure_dendro(obj_RGC)
+
+obj_BC <- subset(obj, cells = rownames(BC_meta))
+Idents(obj_BC) <- "plotting"
+obj_BC <- BuildClusterTree(obj_BC, reorder = TRUE)
+BC_levels <- levels(Idents(obj_BC))
+BC_p <- SuppFigure_dendro(obj_BC)
+
+# Set order for full object plotting
+obj@meta.data$plotting <- factor(obj@meta.data$plotting, levels = c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+
+# Generate DotPlot
+RGC_markers= c("RBPMS2","RBPMS", "SLC17A6", "THY1", "NEFL", "NEFM")
+BC_markers=c("VSX2", "OTX2", "GRM6", "VSX1", "CABP5", "GRIK1")
+AC_markers=c("TFAP2A", "TFAP2B", "TFAP2C", "GAD1", "GAD2", "SLC6A9")
+HC_markers=c("ONECUT1", "LHX1", "CALB1", "TPM3")
+Cone_markers=c("PDE6H", "CRX", "ARR3")
+Rod_markers=c("SAG", "PDC", "RHO")
+MG_markers=c("SLC1A3","RLBP1", "APOE")
+
+dp <- DotPlot(obj, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Rod_markers, Cone_markers, MG_markers), group.by = "plotting", assay = "RNA") + RotatedAxis() + NoLegend()
+
+
+# Set dataframe for barplots
+class_df <- data.frame(table(obj@meta.data$plotting))
+rownames(class_df) <- class_df$Var1
+
+# Generate Heatmap
+hmap <- SuppFigure_hmap(obj, scale = FALSE)
+
+# Set parameters for plotting
+spacing = 850.46 / 936 / length(c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+bar_axis = .026
+top_gap = 4/936
+bottom_gap = 1 - 857 / 936
+dendro_gap = 30 / 936
+
+# All plots
+pdf(paste0("../Figures/Supp Fig 1/", species, ".pdf"), w=11, h=13, useDingbats = FALSE)
+ggdraw() +
+  draw_plot(dp, x=.05, y=0, width = .7, height = 1) +
+  draw_plot(ClassBarPlot(class_df, RGC_levels, "gold"), x=0.73, y=0.065, width = .1, height = bar_axis + length(RGC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, BC_levels, "burlywood3"), x=.73, y=.065+length(RGC_levels)*spacing, width = .1, height = bar_axis+length(BC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, c("GabaAC", "GlyAC"), "sienna1"), x=.73, y= 1-top_gap-6*spacing-bar_axis, width = .1, height = bar_axis+2*spacing) +
+  draw_plot(hmap, x = .83, y = 0, width = .17, height = 1) +
+  draw_plot(RGC_p, x=0, y= bottom_gap - dendro_gap, width = .08, height = length(RGC_levels)*spacing + 2*dendro_gap) + 
+  draw_plot(BC_p, x=0, y=bottom_gap + length(RGC_levels)*spacing - dendro_gap, width = .08, height = length(BC_levels)*spacing + 2*dendro_gap) 
+dev.off()
+
+```
+
+## Squirrel
+```{r}
+species <- "Squirrel"
+obj <- readRDS(paste0("../Species_Initial/", species, "_initial.rds"))
+Idents(obj) <- "cell_class"
+
+# Format to include RGC and BC type
+RGC_meta <- readRDS("../Metadata/RGC/Squirrel_RGC_v2_metadata.rds")
+BC_meta <- readRDS("../Metadata/BC/Squirrel_BC_v5_metadata.rds")
+
+obj@meta.data$plotting <- obj@meta.data$cell_class
+
+obj@meta.data[rownames(RGC_meta), "plotting"] <- paste0("RGC_", RGC_meta$type)
+obj@meta.data[rownames(BC_meta), "plotting"] <- paste0("BC_", BC_meta$type)
+
+# Remove RGCs, BCs that did not make final object, as well as "Other"
+Idents(obj) <- "plotting"
+obj <- subset(obj, plotting != c("RGC"))
+obj <- subset(obj, plotting != c("BP"))
+obj <- subset(obj, plotting != c("Other"))
+obj <- subset(obj, plotting != c("MicroG"))
+
+
+# Build dendrograms for RGC and BC alone
+obj_RGC <- subset(obj, cells = rownames(RGC_meta))
+obj_RGC <- BuildClusterTree(obj_RGC, reorder = TRUE)
+Idents(obj_RGC) <- "plotting"
+RGC_levels <- levels(Idents(obj_RGC))
+RGC_p <- SuppFigure_dendro(obj_RGC)
+
+obj_BC <- subset(obj, cells = rownames(BC_meta))
+Idents(obj_BC) <- "plotting"
+obj_BC <- BuildClusterTree(obj_BC, reorder = TRUE)
+BC_levels <- levels(Idents(obj_BC))
+BC_p <- SuppFigure_dendro(obj_BC)
+
+# Set order for full object plotting
+obj@meta.data$plotting <- factor(obj@meta.data$plotting, levels = c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+
+# Generate DotPlot
+RGC_markers= c("RBPMS2","RBPMS", "SLC17A6", "THY1")
+BC_markers=c("VSX2", "OTX2", "GRM6", "VSX1", "CABP5", "GRIK1")
+AC_markers=c("TFAP2A", "TFAP2B", "TFAP2C", "GAD1", "GAD2", "SLC6A9")
+HC_markers=c("ONECUT1", "LHX1", "CALB1", "TPM3")
+Cone_markers=c("PDE6H", "CRX", "ARR3")
+Rod_markers=c("SAG", "PDC", "RHO")
+MG_markers=c("SLC1A3","RLBP1", "APOE")
+
+dp <- DotPlot(obj, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Rod_markers, Cone_markers, MG_markers), group.by = "plotting", assay = "RNA") + RotatedAxis() + NoLegend()
+
+
+# Set dataframe for barplots
+class_df <- data.frame(table(obj@meta.data$plotting))
+rownames(class_df) <- class_df$Var1
+
+# Generate Heatmap
+hmap <- SuppFigure_hmap(obj, scale = FALSE)
+
+# Set parameters for plotting
+spacing = 850.46 / 936 / length(c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+bar_axis = .026
+top_gap = 4/936
+bottom_gap = 1 - 857 / 936
+dendro_gap = 30 / 936
+
+# All plots
+pdf(paste0("../Figures/Supp Fig 1/", species, ".pdf"), w=11, h=13, useDingbats = FALSE)
+ggdraw() +
+  draw_plot(dp, x=.05, y=0, width = .7, height = 1) +
+  draw_plot(ClassBarPlot(class_df, RGC_levels, "gold"), x=0.73, y=0.065, width = .1, height = bar_axis + length(RGC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, BC_levels, "burlywood3"), x=.73, y=.065+length(RGC_levels)*spacing, width = .1, height = bar_axis+length(BC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, c("GabaAC", "GlyAC"), "sienna1"), x=.73, y= 1-top_gap-6*spacing-bar_axis, width = .1, height = bar_axis+2*spacing) +
+  draw_plot(hmap, x = .83, y = 0, width = .17, height = 1) +
+  draw_plot(RGC_p, x=0, y= bottom_gap - dendro_gap, width = .08, height = length(RGC_levels)*spacing + 2*dendro_gap) + 
+  draw_plot(BC_p, x=0, y=bottom_gap + length(RGC_levels)*spacing - dendro_gap, width = .08, height = length(BC_levels)*spacing + 2*dendro_gap) 
+dev.off()
+
+```
+
+## Mouse
+```{r}
+species <- "Mouse"
+obj <- readRDS(paste0("../Species_Initial/", species, "_initial.rds"))
+Idents(obj) <- "cell_class"
+
+# Format to include RGC and BC type
+RGC_meta <- readRDS("../Metadata/RGC/MouseRGC_integrated_v2_metadata.rds")
+BC_meta <- readRDS("../Metadata/BC/MouseBC_int_ann_v3_metadata.rds")
+
+obj@meta.data$plotting <- obj@meta.data$cell_class
+
+obj@meta.data[rownames(RGC_meta), "plotting"] <-  as.vector(RGC_meta$type)
+obj@meta.data[rownames(BC_meta), "plotting"] <- as.vector(BC_meta$type)
+
+# Remove RGCs, BCs that did not make final object, as well as "Other"
+Idents(obj) <- "plotting"
+obj <- subset(obj, plotting != c("RGC"))
+obj <- subset(obj, plotting != c("BP"))
+obj <- subset(obj, plotting != c("Other"))
+obj <- subset(obj, plotting != c("MicroG"))
+
+
+# Build dendrograms for RGC and BC alone
+obj_RGC <- subset(obj, cells = rownames(RGC_meta))
+obj_RGC <- BuildClusterTree(obj_RGC, reorder = TRUE)
+Idents(obj_RGC) <- "plotting"
+RGC_levels <- levels(Idents(obj_RGC))
+RGC_p <- SuppFigure_dendro(obj_RGC)
+
+obj_BC <- subset(obj, cells = rownames(BC_meta))
+Idents(obj_BC) <- "plotting"
+obj_BC <- BuildClusterTree(obj_BC, reorder = TRUE)
+BC_levels <- levels(Idents(obj_BC))
+BC_p <- SuppFigure_dendro(obj_BC)
+
+# Set order for full object plotting
+obj@meta.data$plotting <- factor(obj@meta.data$plotting, levels = c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+
+# Generate DotPlot
+RGC_markers= c("RBPMS2","RBPMS", "SLC17A6", "THY1")
+BC_markers=c("VSX2", "OTX2", "GRM6", "VSX1", "CABP5", "GRIK1")
+AC_markers=c("TFAP2A", "TFAP2B", "TFAP2C", "GAD1", "GAD2", "SLC6A9")
+HC_markers=c("ONECUT1", "LHX1", "CALB1", "TPM3")
+Cone_markers=c("PDE6H", "CRX", "ARR3")
+Rod_markers=c("SAG", "PDC", "RHO")
+MG_markers=c("SLC1A3","RLBP1", "APOE")
+
+dp <- DotPlot(obj, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Rod_markers, Cone_markers, MG_markers), group.by = "plotting", assay = "RNA") + RotatedAxis() + NoLegend()
+
+
+# Set dataframe for barplots
+class_df <- data.frame(table(obj@meta.data$plotting))
+rownames(class_df) <- class_df$Var1
+
+# Generate Heatmap
+hmap <- SuppFigure_hmap(obj, scale = FALSE)
+
+# Set parameters for plotting
+spacing = 850.46 / 936 / length(c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+bar_axis = .026
+top_gap = 4/936
+bottom_gap = 1 - 857 / 936
+dendro_gap = 30 / 936
+
+# All plots
+pdf(paste0("../Figures/Supp Fig 1/", species, ".pdf"), w=11, h=13, useDingbats = FALSE)
+ggdraw() +
+  draw_plot(dp, x=.05, y=0, width = .7, height = 1) +
+  draw_plot(ClassBarPlot(class_df, RGC_levels, "gold"), x=0.73, y=0.065, width = .1, height = bar_axis + length(RGC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, BC_levels, "burlywood3"), x=.73, y=.065+length(RGC_levels)*spacing, width = .1, height = bar_axis+length(BC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, c("GabaAC", "GlyAC"), "sienna1"), x=.73, y= 1-top_gap-6*spacing-bar_axis, width = .1, height = bar_axis+2*spacing) +
+  draw_plot(hmap, x = .83, y = 0, width = .17, height = 1) +
+  draw_plot(RGC_p, x=0, y= bottom_gap - dendro_gap, width = .08, height = length(RGC_levels)*spacing + 2*dendro_gap) + 
+  draw_plot(BC_p, x=0, y=bottom_gap + length(RGC_levels)*spacing - dendro_gap, width = .08, height = length(BC_levels)*spacing + 2*dendro_gap) 
+dev.off()
+
+```
+
+## Tree Shrew
+```{r}
+Shrew <- readRDS("../Species_Initial/Tree_shrew_initial.rds")
+Idents(Shrew) <- "cell_class"
+
+# Format to include RGC and BC type
+RGC_meta <- readRDS("../Metadata/RGC/Tree_shrew_RGC_int_v4_metadata.rds")
+BC_meta <- readRDS("../Metadata/BC/ShrewBC_integrated_v4_metadata.rds")
+
+Shrew@meta.data$plotting <- Shrew@meta.data$cell_class
+
+Shrew@meta.data[rownames(RGC_meta), "plotting"] <- paste0("RGC_", RGC_meta$type)
+Shrew@meta.data[rownames(BC_meta), "plotting"] <- paste0("BC_", BC_meta$type)
+
+# Remove RGCs, BCs that did not make final object, as well as "Other"
+Idents(Shrew) <- "plotting"
+Shrew <- subset(Shrew, plotting %in% setdiff(unique(Shrew@meta.data$plotting), c("RGC", "BP", "Other") ) )
+
+
+# Build dendrograms for RGC and BC alone
+Shrew_RGC <- subset(Shrew, cells = rownames(RGC_meta))
+Shrew_RGC <- BuildClusterTree(Shrew_RGC, reorder = TRUE)
+RGC_levels <- levels(Idents(Shrew_RGC))
+RGC_p <- SuppFigure_dendro(Shrew_RGC)
+
+Shrew_BC <- subset(Shrew, cells = rownames(BC_meta))
+Shrew_BC <- BuildClusterTree(Shrew_BC, reorder = TRUE)
+BC_levels <- levels(Idents(Shrew_BC))
+BC_p <- SuppFigure_dendro(Shrew_BC)
+
+# Set order for full object plotting
+
+Shrew@meta.data$plotting <- factor(Shrew@meta.data$plotting, levels = c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+
+# Generate DotPlot
+RGC_markers= c("RBPMS","RBPMS2", "POU4F1", "THY1")
+BC_markers=c("VSX1", "OTX2")
+AC_markers=c("TFAP2A","TFAP2B","GAD1","GAD2-AS-1","SLC6A9")
+HC_markers=c("ONECUT1", "ONECUT2")
+Rod_markers= c("SAG")
+Cone_markers= c("PDE6H", "CRX", "ARR3")
+MG_markers=c("RLBP1")
+
+dp <- DotPlot(Shrew, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Rod_markers, Cone_markers, MG_markers), group.by = "plotting") + RotatedAxis() + NoLegend()
+
+
+# Set dataframe for barplots
+class_df <- data.frame(table(Shrew@meta.data$plotting))
+rownames(class_df) <- class_df$Var1
+
+# Generate Heatmap
+hmap <- SuppFigure_hmap(Shrew, scale = FALSE)
+
+# Set parameters for plotting
+spacing = 850.46 / 936 / length(c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+bar_axis = .026
+top_gap = 4/936
+bottom_gap = 1 - 857 / 936
+dendro_gap = 30 / 936
+
+# All plots
+pdf("../Figures/Supp Fig 1/Shrew.pdf", w=11, h=13, useDingbats = FALSE)
+ggdraw() +
+  draw_plot(dp, x=.05, y=0, width = .7, height = 1) +
+  draw_plot(ClassBarPlot(class_df, RGC_levels, "gold"), x=0.73, y=0.065, width = .1, height = bar_axis + length(RGC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, BC_levels, "burlywood3"), x=.73, y=.065+length(RGC_levels)*spacing, width = .1, height = bar_axis+length(BC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, c("GabaAC", "GlyAC"), "sienna1"), x=.73, y= 1-top_gap-6*spacing-bar_axis, width = .1, height = bar_axis+2*spacing) +
+  draw_plot(ClassBarPlot(class_df, c("Rod", "Cone"), "skyblue2"), x=.73, y= 1-top_gap-3*spacing-bar_axis, width = .1, height = .05) +
+  draw_plot(hmap, x = .83, y = 0, width = .17, height = 1) +
+  draw_plot(RGC_p, x=0, y= bottom_gap - dendro_gap, width = .08, height = length(RGC_levels)*spacing + 2*dendro_gap) + 
+  draw_plot(BC_p, x=0, y=bottom_gap + length(RGC_levels)*spacing - dendro_gap, width = .08, height = length(BC_levels)*spacing + 2*dendro_gap) 
+dev.off()
+
+```
+
+## Marmoset
+```{r}
+species <- "Marmoset"
+obj <- readRDS(paste0("../Species_Initial/", species, "_initial.rds"))
+Idents(obj) <- "cell_class"
+
+# Format to include RGC and BC type
+fov_RGC_meta <- readRDS("../Metadata/RGC/MarmosetFovea_RGC_int_v3_metadata.rds")
+per_RGC_meta <- readRDS("../Metadata/RGC/MarmosetPeriphery_RGC_int_v2_metadata.rds")
+
+fov_BC_meta <- readRDS("../Metadata/BC/MarmosetFovea_BC_int_v1_metadata.rds")
+per_BC_meta <- readRDS("../Metadata/BC/MarmosetPeriphery_BC_int_v1_metadata.rds")
+
+obj@meta.data$plotting <- obj@meta.data$cell_class
+
+obj@meta.data[rownames(fov_RGC_meta), "plotting"] <- paste0("fRGC_", fov_RGC_meta$type)
+obj@meta.data[rownames(per_RGC_meta), "plotting"] <- paste0("pRGC_", per_RGC_meta$type)
+
+obj@meta.data[rownames(fov_BC_meta), "plotting"] <- paste0("BC_", fov_BC_meta$type)
+obj@meta.data[rownames(per_BC_meta), "plotting"] <- paste0("BC_", per_BC_meta$type)
+
+
+# Remove RGCs, BCs that did not make final object, as well as "Other"
+Idents(obj) <- "plotting"
+obj <- subset(obj, plotting != c("RGC"))
+obj <- subset(obj, plotting != c("BP"))
+obj <- subset(obj, plotting != c("Other"))
+obj <- subset(obj, plotting != c("MicroG"))
+
+
+# Build dendrograms for RGC and BC alone
+obj_RGC <- subset(obj, cells = c(rownames(fov_RGC_meta), rownames(per_RGC_meta)))
+obj_RGC <- BuildClusterTree(obj_RGC, reorder = TRUE)
+Idents(obj_RGC) <- "plotting"
+RGC_levels <- levels(Idents(obj_RGC))
+RGC_p <- SuppFigure_dendro(obj_RGC)
+
+obj_BC <- subset(obj, cells = c(rownames(fov_BC_meta), rownames(per_BC_meta)))
+Idents(obj_BC) <- "plotting"
+obj_BC <- BuildClusterTree(obj_BC, reorder = TRUE)
+BC_levels <- levels(Idents(obj_BC))
+BC_p <- SuppFigure_dendro(obj_BC)
+
+# Set order for full object plotting
+obj@meta.data$plotting <- factor(obj@meta.data$plotting, levels = c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+
+# Generate DotPlot
+RGC_markers= c("RBPMS2","RBPMS", "SLC17A6", "THY1")
+BC_markers=c("VSX2", "OTX2", "GRM6", "VSX1", "CABP5", "GRIK1")
+AC_markers=c("TFAP2A", "TFAP2B", "TFAP2C", "GAD1", "GAD2", "SLC6A9")
+HC_markers=c("ONECUT1", "LHX1", "CALB1", "TPM3")
+Cone_markers=c("PDE6H", "CRX", "ARR3")
+Rod_markers=c("SAG", "PDC", "RHO")
+MG_markers=c("SLC1A3","RLBP1", "APOE")
+
+dp <- DotPlot(obj, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Rod_markers, Cone_markers, MG_markers), group.by = "plotting", assay = "RNA") + RotatedAxis() + NoLegend()
+
+
+# Set dataframe for barplots
+class_df <- data.frame(table(obj@meta.data$plotting))
+rownames(class_df) <- class_df$Var1
+
+# Generate Heatmap
+hmap <- SuppFigure_hmap(obj, scale = FALSE)
+
+# Set parameters for plotting
+spacing = 850.46 / 936 / length(c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+bar_axis = .026
+top_gap = 4/936
+bottom_gap = 1 - 857 / 936
+dendro_gap = 30 / 936
+
+# All plots
+pdf(paste0("../Figures/Supp Fig 1/", species, ".pdf"), w=11, h=13, useDingbats = FALSE)
+ggdraw() +
+  draw_plot(dp, x=.05, y=0, width = .7, height = 1) +
+  draw_plot(ClassBarPlot(class_df, RGC_levels, "gold"), x=0.73, y=0.065, width = .1, height = bar_axis + length(RGC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, BC_levels, "burlywood3"), x=.73, y=.065+length(RGC_levels)*spacing, width = .1, height = bar_axis+length(BC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, c("GabaAC", "GlyAC"), "sienna1"), x=.73, y= 1-top_gap-6*spacing-bar_axis, width = .1, height = bar_axis+2*spacing) +
+  draw_plot(hmap, x = .83, y = 0, width = .17, height = 1) +
+  draw_plot(RGC_p, x=0, y= bottom_gap - dendro_gap, width = .08, height = length(RGC_levels)*spacing + 2*dendro_gap) + 
+  draw_plot(BC_p, x=0, y=bottom_gap + length(RGC_levels)*spacing - dendro_gap, width = .08, height = length(BC_levels)*spacing + 2*dendro_gap) 
+dev.off()
+
+```
+
+## Macaque
+```{r}
+species <- "Macaque"
+obj <- readRDS(paste0("../Species_Initial/", species, "_initial.rds"))
+Idents(obj) <- "cell_class"
+
+# Format to include RGC and BC type
+fov_RGC_meta <- readRDS("../Metadata/RGC/MacaqueFovea_RGC_velo_ann_v1_metadata.rds")
+per_RGC_meta <- readRDS("../Metadata/RGC/MacaquePeri_RGC_velo_ann_v2_metadata.rds")
+
+fov_BC_meta <- readRDS("../Metadata/BC/MacaqueFovea_BC_velo_ann_v1_metadata.rds")
+per_BC_meta <- readRDS("../Metadata/BC/MacaquePeri_BC_velo_ann_v1_metadata.rds")
+
+obj@meta.data$plotting <- obj@meta.data$cell_class
+
+obj@meta.data[rownames(fov_RGC_meta), "plotting"] <- paste0("fRGC_", fov_RGC_meta$type)
+obj@meta.data[rownames(per_RGC_meta), "plotting"] <- paste0("pRGC_", per_RGC_meta$type)
+
+obj@meta.data[rownames(fov_BC_meta), "plotting"] <- as.vector(fov_BC_meta$type)
+obj@meta.data[rownames(per_BC_meta), "plotting"] <- as.vector(per_BC_meta$type) 
+
+
+# Remove RGCs, BCs that did not make final object, as well as "Other"
+Idents(obj) <- "plotting"
+obj <- subset(obj, plotting != c("RGC"))
+obj <- subset(obj, plotting != c("BP"))
+obj <- subset(obj, plotting != c("Other"))
+obj <- subset(obj, plotting != c("MicroG"))
+
+
+# Build dendrograms for RGC and BC alone
+obj <- FindVariableFeatures(obj)
+obj_RGC <- subset(obj, cells = c(rownames(fov_RGC_meta), rownames(per_RGC_meta)))
+obj_RGC <- BuildClusterTree(obj_RGC, reorder = TRUE)
+Idents(obj_RGC) <- "plotting"
+RGC_levels <- levels(Idents(obj_RGC))
+RGC_p <- SuppFigure_dendro(obj_RGC)
+
+obj_BC <- subset(obj, cells = c(rownames(fov_BC_meta), rownames(per_BC_meta)))
+Idents(obj_BC) <- "plotting"
+obj_BC <- BuildClusterTree(obj_BC, reorder = TRUE)
+BC_levels <- levels(Idents(obj_BC))
+BC_p <- SuppFigure_dendro(obj_BC)
+
+# Set order for full object plotting
+obj@meta.data$plotting <- factor(obj@meta.data$plotting, levels = c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+
+# Generate DotPlot
+RGC_markers= c("RBPMS2","RBPMS", "SLC17A6", "THY1")
+BC_markers=c("VSX2", "OTX2", "GRM6", "VSX1", "CABP5", "GRIK1")
+AC_markers=c("TFAP2A", "TFAP2B", "TFAP2C", "GAD1", "GAD2", "SLC6A9")
+HC_markers=c("ONECUT1", "LHX1", "CALB1", "TPM3")
+Cone_markers=c("PDE6H", "CRX", "ARR3")
+Rod_markers=c("SAG", "PDC", "RHO")
+MG_markers=c("SLC1A3","RLBP1", "APOE")
+
+dp <- DotPlot(obj, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Rod_markers, Cone_markers, MG_markers), group.by = "plotting", assay = "RNA") + RotatedAxis() + NoLegend()
+
+
+# Set dataframe for barplots
+class_df <- data.frame(table(obj@meta.data$plotting))
+rownames(class_df) <- class_df$Var1
+
+# Generate Heatmap
+obj@meta.data$orig.file <- obj@meta.data$orig.ident
+hmap <- SuppFigure_hmap(obj, scale = FALSE)
+
+# Set parameters for plotting
+spacing = 850.46 / 936 / length(c(RGC_levels, BC_levels, "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG"))
+bar_axis = .026
+top_gap = 4/936
+bottom_gap = 1 - 857 / 936
+dendro_gap = 30 / 936
+
+# All plots
+pdf(paste0("../Figures/Supp Fig 1/", species, ".pdf"), w=11, h=13, useDingbats = FALSE)
+ggdraw() +
+  draw_plot(dp, x=.05, y=0, width = .7, height = 1) +
+  draw_plot(ClassBarPlot(class_df, RGC_levels, "gold"), x=0.73, y=0.065, width = .1, height = bar_axis + length(RGC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, BC_levels, "burlywood3"), x=.73, y=.065+length(RGC_levels)*spacing, width = .1, height = bar_axis+length(BC_levels)*spacing) +
+  draw_plot(ClassBarPlot(class_df, c("GabaAC", "GlyAC"), "sienna1"), x=.73, y= 1-top_gap-6*spacing-bar_axis, width = .1, height = bar_axis+2*spacing) +
+  draw_plot(hmap, x = .83, y = 0, width = .17, height = 1) +
+  draw_plot(RGC_p, x=0, y= bottom_gap - dendro_gap, width = .08, height = length(RGC_levels)*spacing + 2*dendro_gap) + 
+  draw_plot(BC_p, x=0, y=bottom_gap + length(RGC_levels)*spacing - dendro_gap, width = .08, height = length(BC_levels)*spacing + 2*dendro_gap) 
+dev.off()
+
+```
+
+

@@ -1,0 +1,38 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+# Load libraries
+```{r}
+library(tidyverse)
+library(pals)
+## library(ggtree)
+library(ape)
+library(adephylo)
+library(Seurat)
+library(SeuratObject)
+library(ggplot2)
+library(ggdendro)
+library(cowplot)
+library(phylogram)
+library(dendextend)
+library(circlize)
+library(RColorBrewer)
+library(viridis)
+library(ggsci)
+library(pvclust)
+library(reshape2)
+source("../utils/utilFxns.R")
+source("../utils/plottingFxns.R")
+```
+
+
+```{r}
+distance <- readRDS("Evolution_Time_MYA.rds")
+
+pdf("../Figures/Fig 1/1_tree.pdf", w=10, h=6, useDingbats = FALSE)
+
+plot(hclust(as.dist(distance)))
+dev.off()
+```
+

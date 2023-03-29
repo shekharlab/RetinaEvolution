@@ -1,0 +1,1169 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# Load libraries
+```{r}
+library(tidyverse)
+library(harmony)
+library(readxl)
+## library(ggtree)
+library(Seurat)
+library(SeuratObject)
+library(ggplot2)
+library(pvclust)
+library(reshape2)
+source("../utils/utilFxns.R")
+source("../utils/plottingFxns.R")
+```
+
+# Save metadata 
+# BC analysis
+
+### Save metadata
+```{r}
+
+BC_files <- c("ZebrafishBC_v3", "ChickenBC_v1", "PigBC_integrated_v3", "FerretBC_integrated_v4",  "Squirrel_BC_v5", "PeromyscusBC_integrated_v3", "MouseBC_int_ann_v3","MarmosetFovea_BC_int_v1", "MarmosetPeriphery_BC_int_v1", "HumanFovea_BC_ann_v2","HumanPeriphery_BC_v2", "MacaqueFovea_BC_velo_ann_v1", "MacaquePeri_BC_velo_ann_v1", "CowBC_integrated_v3", "SheepBC_integrated_v3", "LizardBC_integrated_v1", "OpossumBC_int_v3", "Tree_shrew_BC_int_v3", "RhabdomysBC_int_v2")
+
+
+for (i in 1:length(BC_files)){
+  file <- paste0(BC_files[i], ".rds")
+
+  # Read in each object
+  obj_path <- paste0("Species_Objects/", file)
+  rm(species_obj)
+  species_obj <- readRDS(obj_path)
+  
+  # Extract metadata while the object is loaded
+  meta_table <- species_obj@meta.data
+  
+  # Add new cluster column and save
+  meta_table$type <- Idents(species_obj)
+  saveRDS(meta_table, paste0("Metadata/BC/", BC_files[i], "_metadata.rds"))
+}
+```
+
+### Sample types
+```{r}
+# BC_files <- c("ZebrafishBC_v3", "ChickenBC_v1", "LizardBC_integrated_v1", "OpossumBC_int_v3","FerretBC_integrated_v4",  "PigBC_integrated_v3", "CowBC_integrated_v3", "SheepBC_integrated_v3", "Squirrel_BC_v5", "PeromyscusBC_integrated_v3","RhabdomysBC_int_v2", "MouseBC_int_ann_v3","Tree_shrew_BC_int_v3", "MarmosetFovea_BC_int_v1", "MarmosetPeriphery_BC_int_v1", "HumanFovea_BC_ann_v2", "HumanPeriphery_BC_ann_v2", "MacaqueFovea_BC_velo_ann_v1", "MacaquePeri_BC_velo_ann_v1")
+
+# species_list <- c("Zebrafish", "Chicken","Lizard", "Opossum", "Ferret", "Pig","Cow", "Sheep", "Squirrel","Peromyscus","Rhabdomys",  "Mouse", "Tree_shrew", "Marmoset","Marmoset", "Human","Human", "Macaque", "Macaque")
+
+#BC_files <- c( "OpossumBC_int_v3","FerretBC_integrated_v4",  "PigBC_integrated_v3", "CowBC_integrated_v3", "SheepBC_integrated_v3", "Squirrel_BC_v5", "PeromyscusBC_integrated_v3","RhabdomysBC_int_v2", "MouseBC_int_ann_v3","Tree_shrew_BC_int_v3", "MarmosetFovea_BC_int_v1", "MarmosetPeriphery_BC_int_v1", "HumanFovea_BC_ann_v2", "HumanPeriphery_BC_ann_v2", "MacaqueFovea_BC_velo_ann_v1", "MacaquePeri_BC_velo_ann_v1")
+
+#species_list <- c("Opossum", "Ferret", "Pig","Cow", "Sheep", "Squirrel","Peromyscus","Rhabdomys",  "Mouse", "Tree_shrew", "Marmoset","Marmoset", "Human","Human", "Macaque", "Macaque")
+
+BC_files <- c( "OpossumBC_int_v3","FerretBC_integrated_v4",  "PigBC_integrated_v3", "CowBC_integrated_v3", "SheepBC_integrated_v3", "Squirrel_BC_v5", "PeromyscusBC_integrated_v3","RhabdomysBC_int_v2", "MouseBC_shekhar","Tree_shrew_BC_int_v3", "MarmosetFovea_BC_int_v1", "MarmosetPeriphery_BC_int_v1", "HumanFovea_BC_ann_v2", "HumanPeriphery_BC_ann_v2", "MacaqueFovea_BC_velo_ann_v1", "MacaquePeri_BC_velo_ann_v1")
+
+species_list <- c("Opossum", "Ferret", "Pig","Cow", "Sheep", "Squirrel","Peromyscus","Rhabdomys",  "MouseBC_shekhar", "Tree_shrew", "Marmoset","Marmoset", "Human","Human", "Macaque", "Macaque")
+
+
+BC_types <- NULL 
+BC_mat <- NULL
+
+
+for(i in 1:length(species_list)){
+  species <- species_list[i]
+
+  # Read in meta and format to match ortholog matrix
+  meta_path <-  paste0("../Metadata/BC/", BC_files[i], "_metadata.rds")
+  meta <- readRDS(meta_path)
+  rownames(meta) <- paste0(species, ";", rownames(meta))
+
+  # Read in counts
+  counts_path <- paste0("../Species_OrthologMatrix/Mammals/", species, "_orthomat_m2.rds")
+  species_counts <- readRDS(counts_path)
+  
+  
+  # Randomly down sample 200 cells from each type from each object. 
+  cells <- c()
+  for(t in levels(meta$type)){
+    t_cells <- rownames(subset(meta, type == t))
+    if(length(t_cells) > 200){
+      t_cells <- sample(t_cells, 200)
+    }
+    
+    cells <- c(cells, t_cells)
+  }
+  
+  # Create Seurat object
+  species_type_obj <- CreateSeuratObject(species_counts[,cells], names.delim = ";")
+  species_type_obj@meta.data$type <- meta[cells, "type"]
+  
+  # Merge objects
+  if(is.null(BC_types)){
+    BC_types <- species_type_obj
+  }
+  else{
+    BC_types <- merge(species_type_obj, BC_types)
+  }
+}
+
+
+
+```
+
+### Clustering
+Integration
+```{r}
+BC_types <- ClusterSeurat(BC_types, integrate.by = "orig.ident", numPCs = 20)
+
+BC_types@meta.data$species_type <- paste0(substr(BC_types@meta.data$orig.ident, 1, 3), "_", BC_types@meta.data$type) 
+
+saveRDS(BC_types, "../Species_OrthologMatrix/BC_types_mouse_shekhar.rds")
+
+```
+
+
+```{r}
+Idents(BC_types) <- "integrated_snn_res.0.3"
+DimPlot(BC_types, group.by = "integrated_snn_res.0.3", label = TRUE)
+DimPlot(BC_types, group.by = "orig.ident", shuffle = TRUE)
+VlnPlot(BC_types, features = c("nCount_RNA", "nFeature_RNA"), pt.size = 0)
+```
+
+### Annotate NOGs
+```{r}
+BC_types <- readRDS("../Species_OrthologMatrix/BC_types_mammals_v5.rds")
+
+BC_types@meta.data$seurat_clusters <- BC_types@meta.data$integrated_snn_res.0.5
+BC_types <- MergeClusters(BC_types, idents = c(4,14), refactor = TRUE)
+
+BC_types@meta.data$super_type <- BC_types@meta.data$seurat_clusters
+
+
+type_table <- table(BC_types@meta.data$species_type, BC_types@meta.data$seurat_clusters)
+
+mouse_table <- type_table[grep("Mou", rownames(type_table)),]
+human_table <- type_table[grep("Hum", rownames(type_table)),]
+
+MakePrettyConfusionMatrix(mouse_table)
+plotConfusionMatrix(mouse_table, col.low = "white", col.high = "darkblue")
+
+
+map <- data.frame(a = c("NM_OFF","BC7", "BC5B/5C", "BC3A", "BC9", "BC3B", "NM_ON", "RBC", "BC4", "BC2", "BC1A", "BC5A", "BC5D", "BC6", "BC1B", "BC8"), row.names = 1:16)
+BC_types@meta.data$NOG <- map[BC_types@meta.data$super_type, "a"]
+DimPlot(BC_types, group.by = "NOG", label = TRUE)
+
+saveRDS(BC_types, "../Species_OrthologMatrix/BC_types_nolamp_v4.rds")
+
+```
+
+### Fix Marmoset F/P Split
+```{r}
+Idents(BC_types) <- "species_type"
+
+BC_types@meta.data[WhichCells(BC_types, idents = c("Mar_p7", "Mar_f2")), "species_type"] <- "Mar_FMB"
+BC_types@meta.data[WhichCells(BC_types, idents = c("Mar_p11", "Mar_f8")), "species_type"] <- "Mar_DB1"
+BC_types@meta.data[WhichCells(BC_types, idents = c("Mar_p8", "Mar_f7")), "species_type"] <- "Mar_DB3a"
+BC_types@meta.data[WhichCells(BC_types, idents = c("Mar_p4", "Mar_f6")), "species_type"] <- "Mar_DB3b"
+BC_types@meta.data[WhichCells(BC_types, idents = c("Mar_p2", "Mar_f4")), "species_type"] <- "Mar_DB2"
+BC_types@meta.data[WhichCells(BC_types, idents = c("Mar_p1", "Mar_f3")), "species_type"] <- "Mar_DB4"
+BC_types@meta.data[WhichCells(BC_types, idents = c("Mar_p3", "Mar_f5")), "species_type"] <- "Mar_DB5*"
+BC_types@meta.data[WhichCells(BC_types, idents = c("Mar_p10", "Mar_f12")), "species_type"] <- "Mar_DB4_2"
+BC_types@meta.data[WhichCells(BC_types, idents = c("Mar_p12", "Mar_f13")), "species_type"] <- "Mar_DB6"
+BC_types@meta.data[WhichCells(BC_types, idents = c("Mar_p5", "Mar_f1")), "species_type"] <- "Mar_IMB"
+BC_types@meta.data[WhichCells(BC_types, idents = c("Mar_f10", "Mar_f9", "Mar_p13", "Mar_p9")), "species_type"] <- "Mar_BB/GB*"
+  
+BC_types@meta.data[WhichCells(BC_types, idents = c("Mar_p6", "Mar_f11")), "species_type"] <- "Mar_RB"
+
+
+# saveRDS(BC_types, "../Species_OrthologMatrix/BC_types_mammals_v5.rds")
+```
+
+### Combine Pig RBCs
+```{r}
+BC_types@meta.data[WhichCells(BC_types, idents = c("Pig_2")), "species_type"] <- "Pig_1"
+
+```
+
+
+
+### Type distribution
+```{r}
+type_table <- table(BC_types@meta.data$species_type, BC_types@meta.data$NOG)
+max_type <- colnames(type_table)[max.col(type_table)]
+
+# Which types are in each NOG
+types_plot <- which(max_type == "15")
+MakePrettyConfusionMatrix(type_table[types_plot,])
+
+# How types within a species correspond to NOGs
+types_plot <- grep("Liz", rownames(type_table))
+MakePrettyConfusionMatrix(type_table[types_plot,], xlab.use = "NOG", ylab.use = "Species Type")
+plotConfusionMatrix(type_table[types_plot,])
+
+```
+
+# 3a - raw UMAP
+```{r}
+BC_types <-readRDS("../Species_OrthologMatrix/BC_types_mammals_v5.rds")
+DefaultAssay(BC_types) <- "RNA"
+BC_types <- ClusterSeurat(BC_types)
+
+pdf("../Figures/Fig 3/3a_vert.pdf", w=6, h=6, useDingbats = FALSE)
+DimPlot(BC_types, group.by = "orig.ident", raster = TRUE)
+dev.off()
+```
+
+# 3a - Integrated UMAP - species
+```{r}
+BC_types <-readRDS("../Species_OrthologMatrix/BC_types_nolamp_v4.rds")
+pdf("../Figures/Fig 3/3b_vert.pdf", w=6, h=6, useDingbats = FALSE)
+DimPlot(BC_types, group.by = "orig.ident", raster = TRUE, shuffle = TRUE)
+dev.off()
+```
+
+
+# 3b - Feature Plots
+```{r}
+BC_types <-readRDS("../Species_OrthologMatrix/BC_types_mammals_v5.rds")
+DefaultAssay(BC_types) <- "RNA"
+pdf("../Figures/Fig 3/3c_vert.pdf", w=6, h=6, useDingbats = FALSE)
+DimPlot(BC_types, group.by = "NOG", label = TRUE, raster = TRUE) + NoLegend()
+FeaturePlot(BC_types, features = "Prkca", raster = TRUE, keep.scale = "feature")
+FeaturePlot(BC_types, features = "Isl1", raster = TRUE)
+FeaturePlot(BC_types, features = "Grik1", raster = TRUE)
+dev.off()
+```
+
+
+# 3c - Integrated UMAP - NOG
+```{r}
+BC_types <-readRDS("../Species_OrthologMatrix/BC_types_nolamp_v4.rds")
+pdf("../Figures/Fig 3/3b_vert.pdf", w=6, h=6, useDingbats = FALSE)
+DimPlot(BC_types, group.by = "orig.ident", raster = TRUE, shuffle = TRUE)
+dev.off()
+```
+
+# 3d - Mouse Conf Matr
+```{r}
+type_table <- table(BC_types@meta.data$species_type, BC_types@meta.data$NOG)
+mouse_table <- type_table[grep("Mou", rownames(type_table)),]
+
+mouse_order <- paste0("Mou_",  c("BC1A", "BC1B", "BC2", "BC3A", "BC3B", "BC4", "BC5A", "BC5B", "BC5C", "BC5D", "BC6", "BC7", "BC8", "BC9","RBC"))
+NOG_order <- c("BC1A", "BC1B", "BC2", "BC3A", "BC3B", "BC4", "BC5A", "BC5B", "BC5C", "BC5D", "BC6", "BC7", "BC8/9",  "RBC")
+
+pdf("../Figures/Fig 3/3f_vert.pdf", w=8, h=6, useDingbats = FALSE)
+plotConfusionMatrix(mouse_table[mouse_order, NOG_order], col.high = "darkblue", col.low = "white", xlab.use = "NOG", ylab.use = "Mouse Types")
+dev.off()
+
+mouse_table = t(scale(t(mouse_table), center = FALSE, scale = rowSums(mouse_table)))*103
+df = melt(mouse_table)
+colnames(df) = c("Mouse_Type", "OT", "mapping")
+df$Mouse_Type = factor(df$Mouse_Type, levels = mouse_order)
+df$OT = factor(df$OT, levels = rev(NOG_order))
+
+pdf("../Figures/Fig 3/3d_v3.pdf", w=7, h=6, useDingbats = FALSE)
+ggplot(data = df, aes(x=Mouse_Type, y=OT, fill=mapping)) +
+    geom_tile(colour="gray50", size=0.2) +
+  guides(fill=guide_legend(title="Mapping %")) + 
+    theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1),
+          panel.border = element_blank(),
+          axis.title = element_blank()) +
+    scale_fill_gradient(low = "white",  high = "#A31C0A", na.value = "gray70") + scale_y_discrete(limits = levels(df$OT)) 
+dev.off()
+
+```
+
+# 3d2 - Human Conf Matr
+```{r}
+type_table <- table(BC_types@meta.data$species_type, BC_types@meta.data$NOG)
+
+human_table <- type_table[grep("Hum", rownames(type_table)),]
+colnames(human_table)[13] = "BC8/9"
+human_order <- paste0("Hum_",  c("FMB","OFFX","DB1","DB3a","DB3b","DB2", "DB4","DB5","DB6","IMB","BB/GB*", "RB"))
+NOG_order <- c("BC1A", "BC1B", "BC2", "BC3A", "BC3B", "BC4", "BC5A", "BC5B", "BC5C", "BC5D", "BC6", "BC7", "BC8/9",  "RBC")
+human_table = human_table[-c(1,8),]
+rownames(human_table)[1] = "Hum_BB/GB*"
+
+human_table = t(scale(t(human_table), center = FALSE, scale = rowSums(human_table)))*103
+df = melt(human_table)
+colnames(df) = c("Human_Type", "OT", "mapping")
+df$Human_Type = factor(df$Human_Type, levels = rev(human_order))
+df$OT = factor(df$OT, levels = NOG_order)
+
+pdf("../Figures/Fig 3/HumanBC_OT.pdf", w=7, h=5, useDingbats = FALSE)
+ggplot(data = df, aes(x=OT, y=Human_Type, fill=mapping)) +
+    geom_tile(colour="gray50", size=0.2) +
+  guides(fill=guide_legend(title="Mapping %")) + 
+    theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1),
+          panel.border = element_blank(),
+          axis.title = element_blank()) +
+    scale_fill_gradient(low = "white",  high = "#A31C0A", na.value = "gray70") + scale_x_discrete(limits = levels(df$OT)) 
+dev.off()
+
+```
+
+# 3 - Specificity of mapping
+```{r}
+type_table <- table(BC_types@meta.data$species_type, BC_types@meta.data$NOG) - 5 # -5 to remove noise
+type_table <- type_table * (type_table > 0)
+type_table = t(scale(t(type_table), center = FALSE, scale = rowSums(type_table)))
+a = apply(type_table, 1, function(x) 1/sum(x^2))
+df = data.frame(a)
+df$species = factor(unlist(lapply(rownames(df), function(x) str_split(x,"_")[[1]][1])))
+levels(df$species) = c("Cow","Ferret","Human","Macaque","Marmoset","Mouse","Opossum","Peromyscus","Pig","Rhabdomys","Sheep",
+                       "Squirrel","Tree_shrew")
+
+for (s in levels(df$species)){
+  
+  df_c = subset(df, species==s)
+  x = table(cut(df_c$a,b=c(0.5,1.5,2.5,3.5, Inf)))
+  names(x) = c(1,2,3,4)
+  
+  if (s == "Cow"){
+    df2 = data.frame(x)
+    df2$species = s
+    df2$Freq = df2$Freq / sum(df2$Freq)
+  } else{
+    
+    df_t = data.frame(x)
+    df_t$species = s
+    df_t$Freq = df_t$Freq / sum(df_t$Freq)
+    
+    df2 = rbind(df2, df_t)
+    
+  }
+}
+colnames(df2) = c("OTs_per_cluster", "Frequency", "species")
+df2$OTs_per_cluster = factor(df2$OTs_per_cluster, levels = c(4,3,2,1))
+pdf("../Figures/Fig 3/SpecificityOfMapping_mammals.pdf", w=6,h=4,useDingbats = FALSE)
+ggplot(df2, aes(fill= OTs_per_cluster, y=Frequency, x=species)) + 
+    geom_bar(position="stack", stat="identity") + theme_classic() + theme(axis.text.x = element_text(angle = 45, hjust=1)) 
+dev.off()
+
+```
+
+
+
+# 3 - Specificity of mapping 2
+```{r}
+type_table <- table(BC_types@meta.data$species_type, BC_types@meta.data$NOG) 
+type_table <- type_table * (type_table > 0)
+
+species_pre = c("Cow","Fer","Hum","Mac","Mar","Mou","Opo","Per","Pig","Rha","She","Squ","Tre")
+a = c()
+for (s in species_pre){
+  
+  type_table0 = type_table[grep(s, rownames(type_table)),]
+  type_table0 = type_table0[,colSums(type_table0) > 10]
+  
+  type_table0 = t(scale(t(type_table0), center = FALSE, scale = rowSums(type_table0)))
+
+  type_table0 = scale(type_table0, center = FALSE, scale = colSums(type_table0))
+  a0 = apply(type_table0, 2, function(x) 1/sum(x^2))
+  print(mean(a0))
+  a = c(a,a0)
+  
+}
+```
+
+
+# 3e - NOG markers
+```{r}
+BC_types <- readRDS("../Species_OrthologMatrix/BC_types_mammals_v5.rds")
+
+DefaultAssay(BC_types) <- "RNA"
+
+BC_types@meta.data$NOG <- factor(BC_types@meta.data$NOG, levels = rev(c("BC1A","BC1B", "BC2", "BC3A", "BC3B", "BC4", "BC5A", "BC5B","BC5C", "BC5D","BC6",  "BC7", "BC8/9", "RBC" )))
+
+Idents(BC_types) <- "NOG"
+markers <- FindAllMarkers(BC_types, assay = "RNA", max.cells.per.ident = 1000, only.pos = TRUE)
+markers$pct.dif <- markers$pct.1 - markers$pct.2
+markers <- markers[rev(order(markers$pct.dif)),]
+
+PlotUniqueMarkers(BC_types, markers, edits = TRUE)
+
+# plot_markers <- toupper(c("Prkca", "Isl1", "Grik1","Lrrtm4", "Unc5d",  "Sox5",    "Ptprm", "Kirrel3", "Plxdc2", "Ush2a",  "Ptprk", "Man1a",   "Adcy2" ,  "Erbb4" ,  "Nxph2",   "Pcdh10", "Nkain3"))
+
+plot_markers <- toupper(c("Prkca", "Lrrtm4", "Unc5d",  "Sox5",    "Ptprm", "Kirrel3", "Plxdc2", "Ush2a",  "Ptprk", "Man1a",   "Adcy2" ,  "Erbb4" ,  "Nxph2",   "Pcdh10", "Nkain3"))
+
+DefaultAssay(BC_types) <- "RNA"
+
+pdf("../Figures/Fig 3/3d_mammals.pdf", w=8, h=4, useDingbats = FALSE)
+DotPlot(BC_types, features = plot_markers, assay = "RNA", group.by = "NOG", cols = c("white", "#6e78ff")) + RotatedAxis()
+dev.off()
+
+
+
+DotPlot(BC_types, features = head(subset(markers, cluster == "BC3B"), 10)$gene, assay = "RNA") + RotatedAxis()
+ 
+```
+
+### Pct species exp
+
+```{r}
+BC_types@meta.data$NOG <- factor(BC_types@meta.data$NOG, levels = c("BC1A","BC1B", "BC2", "BC3A", "BC3B", "BC4", "BC5A", "BC5B","BC5C", "BC5D","BC6",  "BC7", "BC8/9", "RBC" ))
+
+plot_markers <- toupper(c("Prkca", "Lrrtm4", "Unc5d",  "Sox5",    "Ptprm", "Kirrel3", "Plxdc2", "Ush2a",  "Ptprk", "Man1a",   "Adcy2" ,  "Erbb4" ,  "Nxph2",   "Pcdh10", "Nkain3"))
+
+
+pdf("../Figures/Fig 3/DE_dp_species_perc.pdf", w=8, h=4, useDingbats = FALSE)
+
+new_dotplot(BC_types, genes.use = plot_markers, ident.use = "NOG", col.low = "white", col.high =  "#6e78ff", species.threshold = .3, breaks = c(0,4,8,12))
+dev.off()
+```
+
+
+
+# 3f - RBC and BC1B Conf
+```{r}
+type_table <- table(BC_types@meta.data$species_type, BC_types@meta.data$NOG)
+type_table = type_table[rowSums(type_table) > 20,]
+max_type <- colnames(type_table)[max.col(type_table)]
+
+
+
+# Which types are in each NOG
+types_plot <- which(max_type == "RBC")
+types_plot <- c(types_plot, which(max_type == "BC1B"))
+types_plot <- rownames(type_table)[types_plot]
+
+# Remove Tre_13, Tre_14 and Pig_14
+types_plot <- setdiff(types_plot, c("Tre_13", "Tre_14", "Pig_14"))
+# Add Peromyscus cluster Per_6 for BC1B
+types_plot <- c(types_plot, "Per_6")
+
+NOG_order <- c("BC1A", "BC1B", "BC2", "BC3A", "BC3B", "BC4", "BC5A", "BC5B", "BC5C", "BC5D", "BC6", "BC7", "BC8/9", "RBC")
+
+plot_table <- type_table[types_plot, NOG_order]
+
+plot_table = t(scale(t(plot_table), center = FALSE, scale = rowSums(plot_table))) * 100
+df = melt(plot_table)
+colnames(df) = c("Species_Type", "OT", "mapping")
+df$Species_Type = factor(df$Species_Type, levels = rev(types_plot))
+df$OT = factor(df$OT, levels = NOG_order)
+
+pdf("../Figures/Fig 3/RBC_BC1B.pdf", w=4, h=6, useDingbats = FALSE)
+ggplot(data = df, aes(x=OT, y=Species_Type, fill=mapping)) +
+    geom_tile(colour="gray50", size=0.2) +
+  guides(fill=guide_legend(title="Mapping %")) + 
+    theme(axis.text.x = element_text(angle = 90, vjust = 1),
+          panel.border = element_blank(),
+          axis.title = element_blank()) +
+    scale_fill_gradient(low = "white",  high = "#A31C0A", na.value = "gray70") + scale_x_discrete(limits = levels(df$OT)) 
+dev.off()
+```
+
+
+
+# 3g - RBC Species DE
+```{r}
+BC_types <- readRDS("../Species_OrthologMatrix/BC_types_mammals_v5.rds")
+RBC <- subset(BC_types, NOG == "RBC")
+RBC@meta.data$orig.ident <- factor(RBC@meta.data$orig.ident, levels = rev(c("Opossum", "Ferret", "Pig","Cow", "Sheep", "Squirrel","Peromyscus","Rhabdomys",  "Mouse", "Tree_shrew", "Marmoset", "Macaque", "Human")))
+
+Idents(RBC) <- "orig.ident"
+
+DefaultAssay(RBC) <- "RNA"
+
+RBC_markers <- FindAllMarkers(RBC, assay = "RNA", max.cells.per.ident = 1000, only.pos = TRUE)
+
+plot_markers <- TopMarkers(RBC_markers, num_markers =2)
+plot_markers[1:2] <- c("SLITRK1", "CXCL14")
+
+pdf("../Figures/Fig 3/3g.pdf", w=10, h=4.5, useDingbats = FALSE)
+DotPlot(RBC, group.by = "orig.ident", features = plot_markers, assay = "RNA", cols = c("white", "#6e78ff")) + RotatedAxis()
+dev.off()
+```
+
+```{r}
+BC_types <- readRDS("../Species_OrthologMatrix/BC_types_mammals_v5.rds")
+BC1B <- subset(BC_types, NOG == "BC1B")
+BC1B@meta.data$orig.ident <- factor(BC1B@meta.data$orig.ident, levels = c("Opossum", "Ferret", "Pig","Cow", "Sheep", "Squirrel","Peromyscus","Rhabdomys",  "Mouse", "Tree_shrew", "Marmoset","Human", "Macaque"))
+
+Idents(BC1B) <- "orig.ident"
+
+DefaultAssay(BC1B) <- "RNA"
+
+BC1B_markers <- FindAllMarkers(BC1B, assay = "RNA", max.cells.per.ident = 1000, only.pos = TRUE)
+
+plot_markers <- TopMarkers(BC1B_markers, num_markers =2)
+
+pdf("../Figures/Fig 3/3g_BC1B.pdf", w=10, h=4.5, useDingbats = FALSE)
+DotPlot(BC1B, group.by = "orig.ident", features = plot_markers) + RotatedAxis()
+dev.off()
+```
+
+# 3j,k - proportions (Josh - max)
+```{r}
+BC_types <- readRDS("../Species_OrthologMatrix/BC_types_mammals_v5.rds")
+
+species_list <- c("Opossum", "Ferret", "Pig","Cow", "Sheep", "Squirrel","Peromyscus","Rhabdomys",  "Mouse", "Tree_shrew", "MarmosetFovea","MarmosetPeriphery", "HumanFovea", "HumanPeriphery", "MacaqueFovea", "MacaquePeriphery")
+
+BC_files <- c("OpossumBC_int_v3","FerretBC_integrated_v4", "PigBC_integrated_v3","CowBC_integrated_v3", "SheepBC_integrated_v3",   "Squirrel_BC_v5", "PeromyscusBC_integrated_v3","RhabdomysBC_int_v2", "MouseBC_int_ann_v3", "Tree_shrew_BC_int_v3", "MarmosetFovea_BC_int_v1", "MarmosetPeriphery_BC_int_v1", "HumanFovea_BC_ann_v2","HumanPeriphery_BC_ann_v2", "MacaqueFovea_BC_velo_ann_v1", "MacaquePeri_BC_velo_ann_v1")
+
+# Create a mapping vector that maps a species type to a NOG
+type_table <- table(BC_types@meta.data$species_type, BC_types@meta.data$NOG)
+max_type <- colnames(type_table)[max.col(type_table)]
+names(max_type) <- rownames(type_table)
+
+prop <- NULL
+
+for (i in 1:length(BC_files)){
+  file <- paste0(BC_files[i], "_metadata.rds")
+  species <- species_list[i]
+
+  # Read in meta
+  meta_path <- paste0("../Metadata/BC/", file)
+  meta <- readRDS(meta_path)
+  
+  # Identify corresponding NOG
+  meta$species_type <- paste0(substr(species, 1, 3), "_", meta$type) 
+  meta$NOG <- max_type[meta$species_type]
+  
+  # Save proportions
+  if(is.null(prop)){
+    prop <- data.frame(table(meta$NOG))
+    rownames(prop) <- prop$Var1
+    prop$Var1 <- NULL
+    colnames(prop) <- species
+  }
+  else{
+    t <- table(meta$NOG)
+    prop[names(t), species] <- t
+  }
+  
+}
+
+prop[is.na(prop)] <- 0
+```
+
+# 3j,k - proportions (KS - average)
+```{r}
+BC_types <- readRDS("../Species_OrthologMatrix/BC_types_mammals_v5.rds")
+
+species_list <- c("Opossum", "Ferret", "Pig","Cow", "Sheep", "Squirrel","Peromyscus","Rhabdomys",  "Mouse", "Tree_shrew", "MarmosetFovea","MarmosetPeriphery", "HumanFovea", "HumanPeriphery", "MacaqueFovea", "MacaquePeriphery")
+
+BC_files <- c("OpossumBC_int_v3","FerretBC_integrated_v4", "PigBC_integrated_v3","CowBC_integrated_v3", "SheepBC_integrated_v3",   "Squirrel_BC_v5", "PeromyscusBC_integrated_v3","RhabdomysBC_int_v2", "MouseBC_int_ann_v3", "Tree_shrew_BC_int_v3", "MarmosetFovea_BC_int_v1", "MarmosetPeriphery_BC_int_v1", "HumanFovea_BC_ann_v2","HumanPeriphery_BC_ann_v2", "MacaqueFovea_BC_velo_ann_v1", "MacaquePeri_BC_velo_ann_v1")
+
+# Create a mapping vector that maps a species type to a NOG
+type_table <- table(BC_types@meta.data$species_type, BC_types@meta.data$NOG)
+type_prop <- t(scale(t(type_table), center = FALSE, scale = rowSums(type_table)))
+
+prop <- NULL
+
+for (i in 1:length(BC_files)){
+  file <- paste0(BC_files[i], "_metadata.rds")
+  species <- species_list[i]
+
+  # Read in meta
+  meta_path <- paste0("../Metadata/BC/", file)
+  meta <- readRDS(meta_path)
+  
+  # Identify corresponding NOG
+  meta$species_type <- paste0(substr(species, 1, 3), "_", meta$type) 
+  
+  species_num = table(meta$species_type)
+  
+  type_prop_species = type_prop[rownames(type_prop) %in% unique(meta$species_type),]
+  
+  species_type_OT_map = as.matrix(type_prop_species) * as.vector(species_num[rownames(type_prop_species)])
+  species_OT_prop = colSums(species_type_OT_map) / sum(species_type_OT_map)
+  
+  # Save proportions
+  if(is.null(prop)){
+    prop <- data.frame(species_OT_prop)
+    prop$species <- species
+    prop$OT = rownames(prop)
+    rownames(prop) = NULL
+  } else{
+    prop_c <- data.frame(species_OT_prop)
+    prop_c$species <- species
+    prop_c$OT <- rownames(prop_c)
+    rownames(prop_c) = NULL
+    prop = rbind(prop, prop_c)
+  }
+  
+}
+
+prop[is.na(prop)] <- 0
+```
+
+## 3j - Rod proportions
+```{r}
+Rod_prop <- c(.47, 0.40, 0.01, .99, .932, .8889, .920, .9167, .1448, .9850, .5516, .9726, .0886,  0.21, .8333, .16, .9524, .16, .9505)
+
+species <- c("Zebrafish", "Chicken", "Lizard",  "Opossum", "Ferret", "Pig","Cow", "Sheep", "Squirrel","Peromyscus","Rhabdomys",  "Mouse", "Tree_shrew", "MarmosetFovea","MarmosetPeriphery", "HumanFovea", "HumanPeriphery", "MacaqueFovea", "MacaquePeriphery")
+names(Rod_prop) <- species
+
+
+#RB_prop <- prop["RBC", ] / colSums(prop)
+#RB_prop["RBC", "Zebrafish"] <- .0573
+#RB_prop["RBC", "Lizard"] <- 0.09391341
+#RB_prop["RBC", "Chicken"] <- .0211
+#RB_prop <- RB_prop[, species]
+#RB_prop["Rod", ] <- Rod_prop
+
+# KS
+RB_prop = subset(prop, OT=="RBC")
+df = data.frame(species_OT_prop = c(0.0573, 0.0939, 0.0211), species = c("Zebrafish","Lizard","Chicken"),
+                OT = "RBC")
+RB_prop = rbind(RB_prop,df)
+
+# Rods
+df2 = data.frame(species_OT_prop = Rod_prop,species = species, OT = "Rod" )
+RB_prop = rbind(RB_prop, df2)
+
+pdf("../Figures/Fig 3/3j.pdf", w=8, h=4, useDingbats = FALSE)
+ggplot(data=RB_prop, aes(x=species, y = species_OT_prop, fill = OT)) +
+      geom_bar(stat = "identity", position = "dodge") +
+      theme_bw() +
+      theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+      xlab("Species") +
+      ylab("Proportion") +
+      scale_y_continuous(limits = c(0, 1), expand = c(0,0)) +
+      scale_x_discrete(limits=species) + 
+      scale_fill_manual(values = c("#7A0177", "#F768A1"))
+dev.off()
+
+
+
+
+```
+
+#### Scatter
+```{r}
+Rod_prop <- c(.47, 0.40, 0.01, .99, .932, .8889, .920, .9167, .1448, .9850, .5516, .9726, .0886,  0.21, .8333, .16, .9524, .16, .9505)
+
+species <- c("Zebrafish", "Chicken", "Lizard",  "Opossum", "Ferret", "Pig","Cow", "Sheep", "Squirrel","Peromyscus","Rhabdomys",  "Mouse", "Tree_shrew", "MarmosetFovea","MarmosetPeriphery", "HumanFovea", "HumanPeriphery", "MacaqueFovea", "MacaquePeriphery")
+names(Rod_prop) <- species
+
+
+RB_prop = subset(prop, OT=="RBC")
+df = data.frame(species_OT_prop = c(0.0573, 0.0939, 0.0211), species = c("Zebrafish","Lizard","Chicken"),
+                OT = "RBC")
+RB_prop = rbind(RB_prop,df)
+rownames(RB_prop) <- RB_prop$species
+RB_prop$Rod <- 0
+RB_prop[species, "Rod"] <- Rod_prop[species]
+
+
+library(ggrepel)
+pdf("../Figures/Fig 3/3j_v2.pdf", w=6, h=6, useDingbats = FALSE)
+ggplot(RB_prop, aes(x=species_OT_prop, y=Rod)) +
+  geom_point() + 
+  geom_text_repel(label=rownames(RB_prop)) +
+  theme_classic()  +
+  xlab("Rod bipolar proportion") + ylab("Rod proportion") +
+  scale_y_continuous(breaks = 0:4 *.25) +
+  scale_x_continuous(breaks =  0:4 *.25) +
+  coord_cartesian(xlim =c(0, 1), ylim = c(0, 1))
+dev.off()
+
+pdf("../Figures/Fig 3/3j_v2_inset.pdf", w=6, h=6, useDingbats = FALSE)
+ggplot(RB_prop, aes(x=species_OT_prop, y=Rod)) +
+  geom_point() + 
+  geom_text(label=rownames(RB_prop)) +
+  theme_classic()  +
+  xlab("Rod bipolar proportion") + ylab("Rod proportion") +
+  scale_y_continuous(breaks = 0:4 *.25) +
+  scale_x_continuous(breaks =  0:4 *.25) +
+  coord_cartesian(xlim =c(0, .25), ylim = c(0, .25))
+dev.off()
+```
+
+#### Jenson shannon divergence
+```{r}
+library(philentropy)
+RB_prop2 = RB_prop[,c(2,1)]
+RB_prop2$ConeBC = 1-RB_prop2$species_OT_prop
+colnames(RB_prop2)[2] = "RodBC"
+JSD_rodBC = matrix(0, nrow=length(species), ncol = length(species))
+rownames(JSD_rodBC) = species; colnames(JSD_rodBC) = species
+
+for (s1 in species){
+  for (s2 in species){
+    p1 = as.numeric(RB_prop2[s1, c(2,3)])
+    p2 = as.numeric(RB_prop2[s2, c(2,3)])
+    JSD_rodBC[s1,s2] = JSD(rbind(p1,p2)) 
+  }
+}
+
+JSD_rodBC = 1-JSD_rodBC
+JSD_rodBC = as.data.frame(JSD_rodBC); JSD_rodBC$species = rownames(JSD_rodBC)
+diag(JSD_rodBC) = NA
+
+JSD_rodBC = melt(JSD_rodBC)
+colnames(JSD_rodBC) = c("Species1", "Species2","JSD")
+species1 = c("Zebrafish","Chicken", "Lizard", "Squirrel","Rhabdomys","Tree_shrew","MarmosetFovea","MacaqueFovea", "HumanFovea",
+             "MarmosetPeriphery","MacaquePeriphery", "HumanPeriphery", "Mouse","Peromyscus", "Opossum",
+             "Ferret","Pig","Cow","Sheep")
+JSD_rodBC$Species1 = factor(JSD_rodBC$Species1, levels = species1)
+JSD_rodBC$Species2 = factor(JSD_rodBC$Species2, levels = rev(species1))
+
+library(viridis)
+pdf("../Figures/Fig 3/3_JSD_rodBC.pdf", w=7, h=6, useDingbats = FALSE)
+ggplot(data = JSD_rodBC, aes(x=Species1, y=Species2, fill=JSD)) +
+    geom_tile(colour="gray50", size=0.2) +
+    theme(axis.text.x = element_text(angle = 45, hjust=1),
+          panel.border = element_blank(),
+          axis.title = element_blank()) +
+   scale_fill_viridis(option = "E", discrete = FALSE)
+dev.off()
+
+
+```
+
+
+## 3i - Cone BP proportions
+
+```{r}
+Cone_prop <- prop[setdiff(rownames(prop) , "RBC"),]
+Cone_prop <- t(Cone_prop)
+Cone_prop <- Cone_prop / rowSums(Cone_prop)
+Cone_prop <- t(Cone_prop)
+Cone_prop <- melt(Cone_prop)
+
+pdf("../Figures/Fig 3/3i.pdf", w=8, h=4, useDingbats = FALSE)
+ggplot(data=Cone_prop, aes(x=Var2, y = value, fill = Var1)) +
+      geom_bar(stat = "identity") +
+      theme_bw() +
+      theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+      xlab("Species") +
+      ylab("Proportion") +
+      scale_y_continuous(expand = c(0,0)) +
+      scale_fill_manual(values = c("orangered4", brewer.pal(11, "RdYlBu"), "purple4"))
+dev.off()
+
+```
+
+## 3k - Cone BP proportions (KS)
+
+```{r}
+Cone_prop <- subset(prop, OT != "RBC")
+# Renomralize
+for (s in unique(Cone_prop$species)){
+  Cone_prop[Cone_prop$species == s, "species_OT_prop"] = subset(Cone_prop, species == s)$species_OT_prop / sum(subset(Cone_prop, species == s)$species_OT_prop)
+}
+species <- rev(c( "Opossum", "Ferret", "Pig","Cow", "Sheep", "Squirrel","Peromyscus","Rhabdomys",  "Mouse", "Tree_shrew", "MarmosetFovea","MarmosetPeriphery", "MacaqueFovea", "MacaquePeriphery", "HumanFovea", "HumanPeriphery"))
+Cone_prop$species = factor(Cone_prop$species, levels = species )
+
+pdf("../Figures/Fig 3/3k.pdf", w=8, h=4, useDingbats = FALSE)
+ggplot(data=Cone_prop, aes(x=species, y = species_OT_prop, fill = OT)) +
+      geom_bar(stat = "identity") +
+      theme_bw() +
+      theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+      xlab("Species") +
+      ylab("Proportion") +
+      scale_y_continuous(expand = c(0,0)) +
+      scale_fill_manual(values = rev(c("orangered4", brewer.pal(11, "RdYlBu"), "purple4")))
+dev.off()
+
+```
+
+## 3 - JSD (cone BC)
+
+```{r}
+Cone_prop <- subset(prop, OT != "RBC")
+# Renomralize
+for (s in unique(Cone_prop$species)){
+  Cone_prop[Cone_prop$species == s, "species_OT_prop"] = subset(Cone_prop, species == s)$species_OT_prop / sum(subset(Cone_prop, species == s)$species_OT_prop)
+}
+
+JSD_coneBC = matrix(0, nrow=length(species), ncol = length(species))
+rownames(JSD_coneBC) = species; colnames(JSD_coneBC) = species
+
+for (s1 in species){
+  for (s2 in species){
+    p1 = subset(Cone_prop, species==s1)$species_OT_prop
+    p2 = subset(Cone_prop, species==s2)$species_OT_prop
+    JSD_coneBC[s1,s2] = JSD(rbind(p1,p2)) 
+  }
+}
+
+JSD_coneBC = 1-JSD_coneBC
+JSD_coneBC = as.data.frame(JSD_coneBC); JSD_coneBC$species = rownames(JSD_coneBC)
+diag(JSD_coneBC) = NA
+
+JSD_coneBC = melt(JSD_coneBC)
+colnames(JSD_coneBC) = c("Species1", "Species2","JSD")
+species1 = c("Squirrel","Rhabdomys","Tree_shrew","MarmosetFovea","MacaqueFovea", "HumanFovea",
+             "MarmosetPeriphery","MacaquePeriphery", "HumanPeriphery","Pig","Cow","Sheep", "Mouse","Peromyscus", "Ferret", "Opossum")
+JSD_coneBC$Species1 = factor(JSD_coneBC$Species1, levels = species1)
+JSD_coneBC$Species2 = factor(JSD_coneBC$Species2, levels = rev(species1))
+
+library(viridis)
+pdf("../Figures/Fig 3/3_JSD_coneBC.pdf", w=7, h=6, useDingbats = FALSE)
+ggplot(data = JSD_coneBC, aes(x=Species1, y=Species2, fill=JSD)) +
+    geom_tile(colour="gray50", size=0.2) +
+    theme(axis.text.x = element_text(angle = 45, hjust=1),
+          panel.border = element_blank(),
+          axis.title = element_blank()) +
+   scale_fill_viridis(option = "E", discrete = FALSE)
+dev.off()
+
+
+
+species <- rev(c( "Opossum", "Ferret", "Pig","Cow", "Sheep", "Squirrel","Peromyscus","Rhabdomys",  "Mouse", "Tree_shrew", "MarmosetFovea","MarmosetPeriphery", "MacaqueFovea", "MacaquePeriphery", "HumanFovea", "HumanPeriphery"))
+Cone_prop$species = factor(Cone_prop$species, levels = species )
+
+
+```
+
+
+## Replicates
+```{r}
+species_list <- c("Opossum", "Ferret", "Pig","Cow", "Sheep", "Squirrel","Peromyscus","Rhabdomys",  "Mouse", "Tree_shrew", "MarmosetFovea","MarmosetPeriphery", "HumanFovea", "HumanPeriphery", "MacaqueFovea", "MacaquePeriphery")
+
+BC_files <- c("OpossumBC_int_v3","FerretBC_integrated_v4", "PigBC_integrated_v3","CowBC_integrated_v3", "SheepBC_integrated_v3",   "Squirrel_BC_v5", "PeromyscusBC_integrated_v3","RhabdomysBC_int_v2", "MouseBC_int_ann_v3", "Tree_shrew_BC_int_v3", "MarmosetFovea_BC_int_v1", "MarmosetPeriphery_BC_int_v1", "HumanFovea_BC_ann_v2","HumanPeriphery_BC_ann_v2", "MacaqueFovea_BC_velo_ann_v1", "MacaquePeri_BC_velo_ann_v1")
+
+# Create a mapping vector that maps a species type to a NOG
+type_table <- table(BC_types@meta.data$species_type, BC_types@meta.data$NOG)
+max_type <- colnames(type_table)[max.col(type_table)]
+names(max_type) <- rownames(type_table)
+```
+
+```{r}
+prop <- NULL
+
+i=15
+file <- paste0(BC_files[i], "_metadata.rds")
+species <- species_list[i]
+# Read in meta
+meta_path <- paste0("../Metadata/BC/", file)
+meta <- readRDS(meta_path)
+  
+# Identify corresponding NOG
+meta$species_type <- paste0(substr(species, 1, 3), "_", meta$type) 
+meta$NOG <- max_type[meta$species_type]
+  
+# Save proportions
+for(file in unique(meta$orig.file)){
+    file_meta <- subset(meta, orig.file == file)
+    if(is.null(prop)){
+      prop <- data.frame(table(file_meta$NOG))
+      rownames(prop) <- prop$Var1
+      prop$Var1 <- NULL
+      colnames(prop) <- paste0(file)
+    }
+    else{
+      t <- table(file_meta$NOG)
+      prop[names(t), paste0(file)] <- t
+    }
+}
+  
+prop[is.na(prop)] <- 0
+
+Cone_prop <- prop[setdiff(rownames(prop) , "RBC"),]
+Cone_prop <- t(Cone_prop)
+Cone_prop <- Cone_prop / rowSums(Cone_prop)
+Cone_prop <- t(Cone_prop)
+Cone_prop <- melt(Cone_prop)
+
+
+ggplot(data=Cone_prop, aes(x=Var2, y = value, fill = Var1)) +
+      geom_bar(stat = "identity") +
+      theme_bw() +
+      theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+            axis.title.x = element_blank()) +
+      ggtitle(species) +
+      ylab("Proportion") +
+      xlab(NULL)
+      scale_y_continuous(limits = c(0, 1), expand = c(0,0)) 
+      
+RB_prop <- prop["RBC", ] / colSums(prop)
+RB_prop["Cone", ] <- 1- RB_prop["RBC", ]
+RB_prop <- melt(RB_prop)
+RB_prop$RC <- rep(c("Rod", "Cone"), dim(RB_prop)[1]/2)
+RB_prop$Cone <- 1-RB_prop$value
+
+ggplot(data=RB_prop, aes(x=variable, y = value, fill = RC)) +
+      geom_bar(stat = "identity") +
+      theme_bw() +
+      theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+            axis.title.x = element_blank()) +
+      ggtitle(species) +
+      ylab("Proportion") +
+      scale_y_continuous(limits = c(0, 1), expand = c(0,0)) +
+      scale_fill_manual(values=c('orchid','royalblue'))
+```
+
+
+
+# Full Confusion Matrix
+```{r}
+BC_types <- readRDS("../Species_OrthologMatrix/BC_types_mammals_v5.rds")
+type_table <- table(BC_types@meta.data$species_type, BC_types@meta.data$NOG)
+
+species_list <- rev(c("Opossum", "Ferret", "Pig","Cow", "Sheep", "Squirrel","Peromyscus","Rhabdomys","Mouse", "Tree_shrew", "Marmoset", "Macaque","Human"))
+
+
+
+NOG_order <- rev(sort(unique(BC_types@meta.data$NOG)))
+
+type_order <- c()
+
+for(species in species_list){
+  types_plot <- grep(substr(species, 1, 3), rownames(type_table), value = TRUE)
+  
+  for(NOG in NOG_order){
+    ugh <- types_plot[colnames(type_table)[max.col(type_table[types_plot,])] == NOG]
+    type_order <- c(type_order, ugh)
+  }
+  
+}
+
+pdf("../Figures/Fig 3/3Conf_mammals.pdf", w=4, h=10, useDingbats = FALSE)
+  plotConfusionMatrix(type_table[type_order,NOG_order], col.low = "white", col.high = "darkblue")
+dev.off()
+
+plot_table <- type_table[type_order,NOG_order]
+plot_table = t(scale(t(plot_table), center = FALSE, scale = rowSums(plot_table)))*100
+df = melt(plot_table)
+colnames(df) = c("Species_Type", "OT", "mapping")
+df$OT = factor(df$OT, levels = NOG_order)
+
+
+pdf("../Figures/Fig 3/Full_map_hm.pdf", w=6, h=12, useDingbats = FALSE)
+ggplot(data = df, aes(x=OT, y=Species_Type, fill=mapping)) +
+    geom_tile(colour="gray50", size=0.2) +
+  guides(fill=guide_legend(title="Mapping %")) + 
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+          axis.ticks.y = element_blank(),
+          #axis.text.y = element_blank(),
+          panel.border = element_blank(),
+          axis.title = element_blank()) +
+    scale_fill_gradient(low = "white",  high = "#A31C0A", na.value = "gray70") + scale_x_discrete(limits = levels(df$OT))
+dev.off()
+
+
+
+```
+
+
+
+
+```{r}
+BC_types <- readRDS("../Species_OrthologMatrix/BC_types_mammals_v5.rds")
+Idents(BC_types) <- "orig.ident"
+
+type_table <- table(BC_types@meta.data$species_type, BC_types@meta.data$NOG)
+
+# How types within a species correspond to NOGs
+types_plot <- grep("She", rownames(type_table))
+MakePrettyConfusionMatrix(type_table[types_plot,], xlab.use = "NOG", ylab.use = "Species Type")
+MakePrettyConfusionMatrix(t(type_table[types_plot,]), xlab.use = "Species Type", ylab.use = "NOG")
+DimPlot(BC_types, group.by = "species_type", cells = WhichCells(BC_types, idents = "Opossum"), label = TRUE) + NoLegend()
+```
+
+# Nonmammals
+```{r}
+BC_types <- readRDS("../Species_OrthologMatrix/BC_types_nolamp_v4.rds")
+BC_types <- FindClusters(BC_types, resolution = 0.8)
+BC_types@meta.data$seurat_clusters <- BC_types@meta.data$integrated_snn_res.0.8
+
+Idents(BC_types) <- "integrated_snn_res.0.8"
+
+BC_types@meta.data[WhichCells(BC_types, idents = 15), "NOG"] <- "BC5B" 
+BC_types@meta.data[WhichCells(BC_types, idents = 2), "NOG"] <- "BC5C" 
+BC_types@meta.data[WhichCells(BC_types, idents = c(17, 16)), "NOG"] <- "BC8/9"  
+
+DimPlot(BC_types, group.by = "NOG")
+
+
+
+type_table <- table(BC_types@meta.data$species_type, BC_types@meta.data$seurat_clusters)
+
+mouse_table <- type_table[grep("Mou", rownames(type_table)),]
+human_table <- type_table[grep("Hum", rownames(type_table)),]
+
+MakePrettyConfusionMatrix(mouse_table)
+plotConfusionMatrix(mouse_table, col.low = "white", col.high = "darkblue")
+
+
+map <- data.frame(a = c("NM_OFF","BC7", "BC5C", "BC3A", "BC8/9", "BC3B", "NM_ON","BC4", "RBC", "BC2", "BC1A", "BC5A", "BC5D", "BC6", "BC1B", "BC5B", "BC8/9", "BC8/9"), row.names = 0:17)
+BC_types@meta.data$NOG <- map[BC_types@meta.data$integrated_snn_res.0.8, "a"]
+DimPlot(BC_types, group.by = "NOG", label = TRUE)
+
+saveRDS(BC_types, "../Species_OrthologMatrix/BC_types_nolamp_v4.rds")
+
+```
+
+## NOG UMAP
+```{r}
+pdf("../Figures/Fig 3/Supp_UMAP_vert.pdf", w=6, h=6, useDingbats = FALSE)
+DimPlot(BC_types, group.by = "NOG", raster = TRUE, shuffle = TRUE, label = TRUE) + NoLegend()
+dev.off()
+```
+
+## Full Confusion Matrix
+
+### With NM
+```{r}
+type_table <- table(BC_types@meta.data$species_type, BC_types@meta.data$NOG)
+
+species_list <- rev(c("Zebrafish", "Chicken", "Lizard", "Opossum", "Ferret", "Pig","Cow", "Sheep", "Squirrel","Peromyscus","Rhabdomys","Mouse", "Tree_shrew", "Marmoset", "Macaque","Human"))
+
+
+
+NOG_order <- sort(unique(BC_types@meta.data$NOG))
+NOG_order[14:16] <- c("RBC", "NM_ON", "NM_OFF")
+
+type_order <- c()
+
+for(species in species_list){
+  types_plot <- grep(substr(species, 1, 3), rownames(type_table), value = TRUE)
+  
+  for(NOG in NOG_order){
+    ugh <- types_plot[colnames(type_table)[max.col(type_table[types_plot,])] == NOG]
+    type_order <- c(type_order, ugh)
+  }
+  
+}
+
+plot_table <- type_table[type_order,NOG_order]
+plot_table = t(scale(t(plot_table), center = FALSE, scale = rowSums(plot_table)))*100
+df = melt(plot_table)
+colnames(df) = c("Species_Type", "OT", "mapping")
+df$OT = factor(df$OT, levels = NOG_order)
+
+
+pdf("../Figures/Fig 3/Vertebrate_conf_hm.pdf", w=6, h=12, useDingbats = FALSE)
+ggplot(data = df, aes(x=OT, y=Species_Type, fill=mapping)) +
+    geom_tile(colour="gray50", size=0.2) +
+  guides(fill=guide_legend(title="Mapping %")) + 
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+          axis.ticks.y = element_blank(),
+          #axis.text.y = element_blank(),
+          panel.border = element_blank(),
+          axis.title = element_blank()) +
+    scale_fill_gradient(low = "white",  high = "#A31C0A", na.value = "gray70") + scale_x_discrete(limits = levels(df$OT)) 
+dev.off()
+
+
+
+```
+
+### Without NM
+```{r}
+pdf("../Figures/Fig 3/Vertebrate_conf_hm.pdf", w=6, h=12, useDingbats = FALSE)
+ggplot(data = df, aes(x=OT, y=Species_Type, fill=mapping)) +
+    geom_tile(colour="gray50", size=0.2) +
+  guides(fill=guide_legend(title="Mapping %")) + 
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+          axis.ticks.y = element_blank(),
+          #axis.text.y = element_blank(),
+          panel.border = element_blank(),
+          axis.title = element_blank()) +
+    scale_fill_gradient(low = "white",  high = "#A31C0A", na.value = "gray70") +
+    scale_x_discrete(limits = NOG_order[1:14]) +
+    scale_y_discrete(limits = )
+dev.off()
+```
+
+
+
+
+### 3f - RBC and BC1B Conf
+```{r}
+type_table <- table(BC_types@meta.data$species_type, BC_types@meta.data$NOG)
+type_table = type_table[rowSums(type_table) > 20,]
+max_type <- colnames(type_table)[max.col(type_table)]
+
+
+
+# Which types are in each NOG
+types_plot <- which(max_type == "RBC")
+types_plot <- c(types_plot, which(max_type == "BC1B"))
+types_plot <- rownames(type_table)[types_plot]
+
+# Remove Tre_13, Tre_14 and Pig_14. 
+# Remove Pig_2, as it should be merged with Pig_1
+types_plot <- setdiff(types_plot, c("Tre_13", "Tre_14", "Pig_14"))
+types_plot <- setdiff(types_plot, c("Pig_2"))
+
+# Add Peromyscus cluster Per_6 for BC1B, Liz_16
+types_plot <- c(types_plot, "Per_6", "Liz_16")
+
+NOG_order <- c("BC1A", "BC1B", "BC2", "BC3A", "BC3B", "BC4", "BC5A", "BC5B", "BC5C", "BC5D", "BC6", "BC7", "BC8/9", "RBC", "NM_ON", "NM_OFF")
+
+plot_table <- type_table[types_plot, NOG_order]
+
+plot_table = t(scale(t(plot_table), center = FALSE, scale = rowSums(plot_table))) * 100
+df = melt(plot_table)
+colnames(df) = c("Species_Type", "OT", "mapping")
+df$Species_Type = factor(df$Species_Type, levels = rev(types_plot))
+df$OT = factor(df$OT, levels = NOG_order)
+
+# Set max value to 75
+df[df$mapping > 60, "mapping"] <- 60
+
+pdf("../Figures/Fig 3/Vert_RBC_BC1B.pdf", w=4, h=6, useDingbats = FALSE)
+ggplot(data = df, aes(x=OT, y=Species_Type, fill=mapping)) +
+    geom_tile(colour="gray50", size=0.2) +
+  guides(fill=guide_legend(title="Mapping %")) + 
+    theme(axis.text.x = element_text(angle = 90, vjust = 1),
+          panel.border = element_blank(),
+          axis.title = element_blank()) +
+    scale_fill_gradient2(low = "white",  high = "#A31C0A", na.value = "gray70", breaks = c(0,20,40,60)) + 
+  scale_x_discrete(limits = levels(df$OT)) 
+dev.off()
+```
+
+# Scratch
+### Fix Marmoset meta
+```{r}
+meta <- readRDS("../Metadata/BC/MarmosetFovea_BC_int_v1_metadata.rds")
+meta$old_type <- meta$type
+meta$type <- NA
+meta[meta$old_type == "f2", "type"] <- "FMB"
+meta[meta$old_type == "f8", "type"] <- "DB1"
+meta[meta$old_type == "f7", "type"] <- "DB3a"
+meta[meta$old_type == "f6", "type"] <- "DB3b"
+meta[meta$old_type == "f4", "type"] <- "DB2"
+meta[meta$old_type == "f3", "type"] <- "DB4"
+meta[meta$old_type == "f5", "type"] <- "DB5*"
+meta[meta$old_type == "f12", "type"] <- "DB4_2"
+meta[meta$old_type == "f13", "type"] <- "DB6"
+meta[meta$old_type == "f1", "type"] <- "IMB"
+meta[meta$old_type == "f9", "type"] <- "BB/GB*"
+meta[meta$old_type == "f10", "type"] <- "BB/GB*"
+meta[meta$old_type == "f11", "type"] <- "RB"
+
+saveRDS(meta, "../Metadata/BC/MarmosetFovea_BC_int_v1_metadata.rds")
+
+
+BC_types@meta.data[WhichCells(BC_types, idents = c("Mar_p7", "Mar_f2")), "species_type"] <- "Mar_FMB"
+BC_types@meta.data[WhichCells(BC_types, idents = c("Mar_p11", "Mar_f8")), "species_type"] <- "Mar_DB1"
+BC_types@meta.data[WhichCells(BC_types, idents = c("Mar_p8", "Mar_f7")), "species_type"] <- "Mar_DB3a"
+BC_types@meta.data[WhichCells(BC_types, idents = c("Mar_p4", "Mar_f6")), "species_type"] <- "Mar_DB3b"
+BC_types@meta.data[WhichCells(BC_types, idents = c("Mar_p2", "Mar_f4")), "species_type"] <- "Mar_DB2"
+BC_types@meta.data[WhichCells(BC_types, idents = c("Mar_p1", "Mar_f3")), "species_type"] <- "Mar_DB4"
+BC_types@meta.data[WhichCells(BC_types, idents = c("Mar_p3", "Mar_f5")), "species_type"] <- "Mar_DB5*"
+BC_types@meta.data[WhichCells(BC_types, idents = c("Mar_p10", "Mar_f12")), "species_type"] <- "Mar_DB4_2"
+BC_types@meta.data[WhichCells(BC_types, idents = c("Mar_p12", "Mar_f13")), "species_type"] <- "Mar_DB6"
+BC_types@meta.data[WhichCells(BC_types, idents = c("Mar_p5", "Mar_f1")), "species_type"] <- "Mar_IMB"
+BC_types@meta.data[WhichCells(BC_types, idents = c("Mar_f10", "Mar_f9", "Mar_p13", "Mar_p9")), "species_type"] <- "Mar_BB/GB*"
+  
+BC_types@meta.data[WhichCells(BC_types, idents = c("Mar_p6", "Mar_f11")), "species_type"] <- "Mar_RB"
+
+
+saveRDS(BC_types, "../Species_OrthologMatrix/BC_types_mammals_v5.rds")
+```
+
+```{r}
+meta <- readRDS("../Metadata/BC/MarmosetPeriphery_BC_int_v1_metadata.rds")
+meta$old_type <- meta$type
+meta$type <- NA
+meta[meta$old_type == "p7", "type"] <- "FMB"
+meta[meta$old_type == "p11", "type"] <- "DB1"
+meta[meta$old_type == "p8", "type"] <- "DB3a"
+meta[meta$old_type == "p4", "type"] <- "DB3b"
+meta[meta$old_type == "p2", "type"] <- "DB2"
+meta[meta$old_type == "p1", "type"] <- "DB4"
+meta[meta$old_type == "p3", "type"] <- "DB5*"
+meta[meta$old_type == "p10", "type"] <- "DB4_2"
+meta[meta$old_type == "p12", "type"] <- "DB6"
+meta[meta$old_type == "p5", "type"] <- "IMB"
+meta[meta$old_type == "p13", "type"] <- "BB/GB*"
+meta[meta$old_type == "p9", "type"] <- "BB/GB*"
+meta[meta$old_type == "p6", "type"] <- "RB"
+
+saveRDS(meta, "../Metadata/BC/MarmosetPeriphery_BC_int_v1_metadata.rds")
+```
+
+
+

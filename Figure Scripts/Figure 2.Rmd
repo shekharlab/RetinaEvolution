@@ -1,0 +1,1313 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# Load libraries
+```{r}
+library(tidyverse)
+library(pals)
+## library(ggtree)
+library(ape)
+library(adephylo)
+library(Seurat)
+library(SeuratObject)
+library(ggplot2)
+library(ggdendro)
+library(cowplot)
+library(phylogram)
+library(dendextend)
+library(circlize)
+library(RColorBrewer)
+library(viridis)
+library(ggsci)
+library(pvclust)
+library(reshape2)
+library(stats)
+source("../utils/utilFxns.R")
+source("../utils/plottingFxns.R")
+```
+
+
+# File directory
+```{r}
+RGC_files <- c("ZebrafishRGC_v1", "ChickenRGC_v1", "PigRGC_integrated_v2", "FerretRGC_integrated_v2", "Squirrel_RGC_v2", "PeromyscusRGC_integrated_v3", "MouseRGC_integrated_v2","MarmosetFovea_RGC_int_v3", "MarmosetPeriphery_RGC_int_v2", "HumanFovea_RGC_int_ann_v1", "HumanPeriphery_RGC_ann_v1", "MacaqueFovea_RGC_velo_ann_v1", "MacaquePeri_RGC_velo_ann_v1", "LizardRGC_int_v2", "OpossumRGC_int_v2", "Tree_shrew_RGC_int_v5", "RhabdomysRGC_int_v2")
+
+
+
+BC_files <- c("ZebrafishBC_v3", "ChickenBC_v1", "PigBC_integrated_v3", "FerretBC_integrated_v4",  "Squirrel_BC_v5", "PeromyscusBC_integrated_v3", "MouseBC_int_ann_v3","MarmosetFovea_BC_int_v1", "MarmosetPeriphery_BC_int_v1", "HumanFovea_BC_int_ann_v1","HumanPeriphery_BC_ann_v1", "MacaqueFovea_BC_velo_ann_v1", "MacaquePeri_BC_velo_ann_v1","LizardBC_integrated_v1","OpossumBC_int_v2", "Tree_shrew_BC_int_v3", "RhabdomysBC_int_v2", "CowBC_integrated_v3", "SheepBC_integrated_v3",  "GoldfishBC_integrated_v1"  )
+
+
+
+directory <- data.frame(RGC = RGC_files, BC = BC_files, row.names = c("Zebrafish", "Chicken", "Pig", "Ferret","Squirrel","Peromyscus","Mouse","MarmosetFovea","MarmosetPeriphery", "HumanFovea","HumanPeriphery", "MacaqueFovea", "MacaquePeriphery","Lizard","Opossum", "Tree_shrew", "Rhabdomys", "Cow", "Sheep"))
+
+saveRDS(directory, "file_directory.rds")
+```
+
+# Figure 2
+
+## a
+Calculate average expression for specific features using each species objects
+```{r}
+species_list <- c("Lamprey", "Zebrafish", "Chicken", "Pig", "Ferret","Squirrel","Peromyscus","Mouse","Marmoset", "Human","Macaque", "Lizard","Opossum", "Tree_shrew", "Rhabdomys", "Cow", "Sheep")
+
+
+RGC_markers= c("RBPMS", "RBPMS2", "SLC17A6",  "THY1", "NEFL", "NEFM", "POU4F1")
+BC_markers= c("VSX1", "VSX2", "OTX2", "GRM6", "TRPM1", "CABP5", "GRIK1")
+AC_markers= c("TFAP2A", "TFAP2B", "TFAP2C", "GAD1", "GAD2","PAX6","ROBO1",  "SLC6A9")
+HC_markers= c("ONECUT1","ONECUT2", "LHX1", "CALB1", "VIM","SLC4A3","WDR72")
+#Cone_markers= c("PDE6H", "ARR3","GNGT2","GNAT2", "CRX")
+#Rod_markers= c("PDC","SAG","NR2E3", "RHO","GNAT1","PDE6B","NRL")
+PR_markers = c("SAG","PDC","RCVRN","GNGT1","GNGT2","NRL")
+MG_markers= c("SLC1A3","RLBP1", "APOE","GLUL","SFRP2")
+
+features <- c(RGC_markers, BC_markers, AC_markers, HC_markers, PR_markers, MG_markers)
+
+classes <- c("RGC", "BP", "GabaAC", "GlyAC", "HC", "Cone", "Rod", "MG")
+full_log <- data.frame(row.names = features)
+full_classnorm <- data.frame(row.names = features)
+
+for(i in 1:length(species_list)){
+  print(i)
+  species <- species_list[i]
+  obj <- readRDS(paste0("../Species_Initial/", species, "_initial.rds"))
+  obj <- UpperCase_genes(obj)
+  DefaultAssay(obj) <- "RNA"
+
+  Idents(obj) <- "cell_class"
+  obj <- subset(obj, idents = classes)
+  
+  obj@meta.data$cell_class0 = factor(obj@meta.data$cell_class, levels = classes)
+  levels(obj@meta.data$cell_class0) = c("RGC","BC","AC","AC","HC","PR","PR", "MG")
+  Idents(obj) <- "cell_class0"
+  
+  # Calculate average expression for all genes by class
+  features_in <- features[features %in% rownames(obj)]
+
+  avg_exp <- AverageExpression(obj, features = features_in, assays = "RNA", slot = "counts")$RNA
+  colnames(avg_exp) <- paste0(species, "_", colnames(avg_exp))
+  
+  # Normalize
+  log_exp <- log1p(avg_exp)
+  class_norm <- avg_exp / apply(avg_exp, 1, max)
+  
+  # save data
+  full_log[features_in, colnames(log_exp)] <- log_exp[features_in,]
+  full_classnorm[features_in, colnames(class_norm)] <- class_norm[features_in,]
+}
+```
+
+Plotting
+```{r}
+species_list <- rev(c("Lamprey", "Zebrafish", "Chicken","Lizard","Opossum","Ferret",  "Pig",  "Cow", "Sheep", "Squirrel","Peromyscus","Rhabdomys","Mouse","Tree_shrew", "Marmoset", "Macaque","Human"))
+
+#order <- c(paste0(species_list, "_RGC"), paste0(species_list, "_BP"),  paste0(species_list, "_GabaAC"), paste0(species_list, "_GlyAC"), paste0(species_list, "_HC"), paste0(species_list, "_Cone"), paste0(species_list, "_Rod"), paste0(species_list, "_MG"))
+
+order <- c(paste0(species_list, "_RGC"), paste0(species_list, "_BC"), paste0(species_list, "_AC"), paste0(species_list, "_HC"), paste0(species_list, "_PR"), paste0(species_list, "_MG"))
+
+file_table <- full_classnorm[, order]
+file_table$gene <- rownames(file_table)
+melt_table <- melt(file_table, id.vars = "gene")
+
+# Tick marks
+tick_min_pos_odd = -0.6
+tick_min_pos_even = -0.4
+custom_ticks = data.frame(cut = sort(unique(melt_table$gene)))
+n_discrete_x_values = nrow(custom_ticks)
+custom_ticks$tick_min_pos = ifelse(1:n_discrete_x_values %% 2 == 0, tick_min_pos_odd, tick_min_pos_even)
+
+
+pdf("../Figures/Fig 2/2av3.pdf", w=8, h=10, useDingbats = FALSE)
+ggplot(data = melt_table, aes(x=gene, y=variable, fill=value)) +
+    geom_tile(colour="white", size=0.2) +
+  guides(fill=guide_legend(title="Norm. Exp.")) + 
+    theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1),
+          axis.text.y = element_blank(),
+          panel.border = element_blank(),
+          axis.title = element_blank()) +
+    scale_fill_gradient(low = "white",  high = "#447241", na.value = "gray70") + scale_x_discrete(limits = features) 
+dev.off()
+
+# ggplot(data = melt_table, aes(x=gene, y=variable, fill=value)) + 
+#     geom_tile() +
+#     theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1), 
+#           axis.text.y = element_blank(),
+#           axis.ticks = element_blank(), 
+#           panel.border = element_blank(),
+#           axis.title = element_blank()) +
+#     scale_fill_gradient(low = "white", high = "darkgreen", na.value = "gray41") +
+#   scale_x_discrete(limits = features)
+```
+
+
+## b, c
+
+### Integration
+```{r}
+All <- NULL
+
+species_list <- c("Lamprey", "Zebrafish", "Chicken", "Pig", "Ferret","Squirrel","Peromyscus","Mouse","Marmoset", "Human","Macaque", "Lizard","Opossum", "Tree_shrew", "Rhabdomys", "Cow", "Sheep")
+
+class_list <- c("RGC", "BP", "GabaAC", "GlyAC", "HC", "Rod", "Cone", "MG")
+
+for(species in species_list){
+  # Read in meta
+  meta_path <- paste0("../Metadata/", species, "_metadata.rds")
+  meta <- readRDS(meta_path)
+
+  # Read in counts
+  counts_path <- paste0("../Species_OrthologMatrix/All_Vertebrates/", species, "_orthomat_v5.rds")
+  species_counts <- readRDS(counts_path)
+
+  # Randomly sample up to 300 cells from each class from each object
+  cells <- c()
+  for(t in class_list){
+    t_cells <- rownames(subset(meta, cell_class == t))
+    if(length(t_cells) > 300){
+      t_cells <- sample(t_cells, 300)
+    }
+    cells <- c(cells, t_cells)
+  }
+  
+  # Create Seurat object
+  class_meta <- meta[cells, "cell_class"]
+  cells <- paste0(species, ";", cells)
+  species_obj <- CreateSeuratObject(species_counts[,cells], names.delim = ";")
+  species_obj@meta.data$cell_class <- class_meta
+  
+  # Merge objects
+  if(is.null(All)){
+    All <- species_obj
+  }
+  else{
+    All <- merge(species_obj, All)
+  }
+  
+}
+```
+
+```{r}
+All@meta.data$species_class <- paste0(All@meta.data$orig.ident, "_", All@meta.data$cell_class)
+All <- ClusterSeurat(All, integrate.by = "orig.ident")
+
+
+saveRDS(All, "../Species_OrthologMatrix/All_classes_lamprey_v1.rds")
+
+Idents(All) <- "seurat_clusters"
+All <- DropClusters(All, idents = c("0", "10", "14"))
+
+All <- MergeClusters(All, idents = c(), refactor = TRUE)
+
+All <- FindNeighbors(All, dims = 1:10)
+All <- RunUMAP(All, dims = 1:10)
+
+saveRDS(All, "../Species_OrthologMatrix/All_classes_lamprey_v2.rds")
+
+
+```
+
+
+
+### Plotting
+```{r}
+All <- readRDS("../Species_OrthologMatrix/All_types_v3.rds")
+All@meta.data$species_subclass <- All@meta.data$species_class
+All@meta.data$subclass <- All@meta.data$cell_class
+All@meta.data$class <- All@meta.data$subclass
+Idents(All) <- "subclass"
+All@meta.data[WhichCells(All, idents = c("GabaAC", "GlyAC")), "class"] <- "AC"
+All@meta.data[WhichCells(All, idents = c("Rod", "Cone")), "class"] <- "PR"
+All@meta.data$species_class <- paste0(All@meta.data$orig.ident, "_", All@meta.data$class)
+
+Idents(All) <- "species_class"
+avg_exp <- AverageExpression(All, group.by = "species_class", slot = "data")
+
+cor_mat <- cor(avg_exp$integrated)
+
+species_list <- rev(c("Lamprey", "Zebrafish", "Chicken","Lizard","Opossum","Ferret",  "Pig",  "Cow", "Sheep", "Squirrel","Peromyscus","Rhabdomys","Mouse","Tree_shrew", "Marmoset", "Macaque","Human"))
+
+species_list <- rev(c( "Zebrafish", "Chicken","Lizard","Opossum","Ferret",  "Pig",  "Cow", "Sheep", "Squirrel","Peromyscus","Rhabdomys","Mouse","Tree_shrew", "Marmoset", "Macaque","Human"))
+
+order <- c(paste0(species_list, "_RGC"), paste0(species_list, "_BP"), paste0(species_list, "_AC"), paste0(species_list, "_HC"), paste0(species_list, "_PR"), paste0(species_list, "_MG"))
+
+file_table <- cor_mat[order, order]
+melt_table <- melt(file_table)
+
+pdf("../Figures/Fig 2/2b_no_lamprey_classes.pdf", w=8, h=6, useDingbats = FALSE)
+ggplot(data = melt_table, aes(x=Var1, y=Var2, fill=value)) + 
+    geom_tile() +
+    theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1), 
+          axis.ticks = element_blank(), 
+          panel.border = element_blank(),
+          axis.title = element_blank()) +
+    scale_fill_viridis(option = "E", discrete = FALSE) +
+    coord_fixed()
+dev.off()
+
+
+```
+
+
+```{r}
+class_list <- c("RGC", "BP", "AC", "HC", "PR", "MG")
+
+order <- c()
+for(species in species_list){
+  order <- c(order, paste0(species,"_", class_list))
+}
+
+file_table <- cor_mat[order, order]
+melt_table <- melt(file_table)
+
+pdf("../Figures/Fig 2/2c_no_lamprey_classes.pdf", w=8, h=6, useDingbats = FALSE)
+ggplot(data = melt_table, aes(x=Var1, y=Var2, fill=value)) + 
+    geom_tile() +
+    theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1), 
+          axis.ticks = element_blank(), 
+          panel.border = element_blank(),
+          axis.title = element_blank()) +
+    scale_fill_viridis(option = "E", discrete = FALSE) +
+    coord_fixed()
+dev.off()
+```
+
+
+## UMAP
+```{r}
+All <- readRDS("../Species_OrthologMatrix/All_classes_lamprey_v2.rds")
+All@meta.data$cell_class0 = factor(All@meta.data$cell_class)
+levels(All@meta.data$cell_class0) = c("BC","PR","AC","AC","HC","MG","RGC","PR")
+All@meta.data$cell_class0 = factor(All@meta.data$cell_class0, levels = c("RGC","BC","AC","HC","PR","MG"))
+
+pdf("../Figures/Fig 2/UMAP_classes_lampreyV2.pdf", w=6, h=6, useDingbats = FALSE)
+DimPlot(All, group.by = "cell_class0", label = TRUE, raster = TRUE, cols = c('palevioletred1','orange', 'palegreen4',"turquoise1", "purple","orchid3") ) + NoLegend() + theme(plot.title = element_blank())
+dev.off()
+
+pdf("../Figures/Fig 2/UMAP_classes_lampreyV3.pdf", w=6, h=6, useDingbats = FALSE)
+DimPlot(All, group.by = "cell_class0", label = TRUE, cols = c('palevioletred1','orange', 'palegreen4',"turquoise1", "purple","orchid3") ) + NoLegend() + theme(plot.title = element_blank())
+dev.off()
+
+
+
+```
+
+```{r}
+All <- readRDS("../Species_OrthologMatrix/All_classes_lamprey_v2.rds")
+All@meta.data$subclass <- All@meta.data$cell_class
+Idents(All) <- "seurat_clusters"
+All@meta.data[WhichCells(All, idents = 8), "subclass"] <- "BC_ON"
+All@meta.data[WhichCells(All, idents = 9), "subclass"] <- "BC_OFF"
+
+pdf("../Figures/Fig 2/UMAP_subclass_all.pdf", w=6, h=6, useDingbats = FALSE)
+DimPlot(All, group.by = "subclass", label = TRUE, shuffle = TRUE, raster = TRUE, cols = brewer.set3(10)) + NoLegend() + theme(plot.title = element_blank())
+dev.off()
+
+pdf("../Figures/Fig 2/UMAP_subclass_blank.pdf", w=6, h=6, useDingbats = FALSE)
+DimPlot(All, group.by = "subclass", raster = TRUE, cols = rep("grey", 10)) + NoLegend() + theme(plot.title = element_blank())
+dev.off()
+```
+
+
+```{r}
+All <- readRDS("../Species_OrthologMatrix/All_types_v3.rds")
+
+All@meta.data$class = factor(All@meta.data$class, levels = c("RGC", "BP", "AC", "HC", "PR", "MG"))
+
+pdf("../Figures/Fig 2/UMAP_classes_nolamprey.pdf", w=6, h=6, useDingbats = FALSE)
+DimPlot(All, group.by = "class", label = TRUE, raster = TRUE, cols = c('palevioletred1','orange', 'palegreen4',"turquoise1", "purple","orchid3") ) + NoLegend() + theme(plot.title = element_blank())
+dev.off()
+
+```
+
+```{r}
+Idents(All) <- "cell_class"
+
+pdf("../Figures/Fig 2/UMAP_species_classes.pdf", w=8, h=6, useDingbats = FALSE)
+DimPlot(All, group.by = "orig.ident", raster = TRUE, shuffle = TRUE) + theme(plot.title = element_blank())
+dev.off()
+
+pdf("../Figures/Fig 2/UMAP_species_RGCs_lampreyV2.pdf", w=6, h=6, useDingbats = FALSE)
+DimPlot(All, group.by = "orig.ident", raster = TRUE, cells = WhichCells(All, idents = "RGC"), shuffle = TRUE) + xlim(c(-2,4)) + ylim(c(5,12))  + theme(plot.title = element_blank()) + NoLegend()
+dev.off()
+
+
+
+```
+
+### Feature Plots
+
+```{r}
+All <- readRDS("../Species_OrthologMatrix/All_classes_lamprey_v2.rds")
+
+species_list <- unique(All@meta.data$orig.ident)
+
+features <- c("GAD1", "RHO", "ARR3", "GRIK1", "ISL1", "SLC6A9", "NRL", "CRX", "NR2E3","THRB","LHX4","MEIS2","TCF4","FEZF2","LHX3","ST18")
+
+new_counts <- rbind(All@assays$RNA@counts, All@assays$RNA@counts[1:length(features),] - All@assays$RNA@counts[1:length(features),])
+
+rownames(new_counts)[(nrow(new_counts)-length(features)+1):nrow(new_counts)] <- features
+
+species_list <- species_list[8:17]
+
+for(species in species_list){
+  print(species)
+  species_obj <- readRDS(paste0("../Species_Initial/", species, "_initial.rds"))
+  species_obj <- UpperCase_genes(species_obj)
+  
+  # Find cells
+  all_cells <- rownames(All@meta.data)[which(All@meta.data$orig.ident == species)]
+  species_cells <- unlist(strsplit(all_cells, ";"))[1:length(all_cells)*2]
+  
+  # Fix 
+    all_cells <- all_cells[species_cells %in% colnames(species_obj@assays$RNA@counts)]
+  species_cells <- species_cells[species_cells %in% colnames(species_obj@assays$RNA@counts)]
+  
+  # Extract expression
+  features_in <- features[features %in% rownames(species_obj@assays$RNA@counts)]
+  new_counts[features_in, all_cells] <-   species_obj@assays$RNA@counts[features_in, species_cells]
+  
+}
+
+```
+
+```{r}
+All_new <- CreateSeuratObject(new_counts, names.delim = ";")
+All_new <- NormalizeData(All_new)
+All_new <- UpperCase_genes(All_new)
+All_new@meta.data <- All@meta.data
+All_new@reductions$umap <- All@reductions$umap
+
+pdf("../Figures/Fig 2/Subclass_fplots.pdf", w=6, h=8, useDingbats = FALSE)
+FeaturePlot(All_new, features = c("GAD1", "RHO", "ARR3", "GRIK1", "ISL1", "SLC6A9"), max.cutoff = 6, raster = TRUE)
+dev.off()
+```
+
+```{r}
+pdf("../Figures/Fig 2/Subclass_fplots.pdf", w=6, h=8, useDingbats = FALSE)
+FeaturePlot(All_new, features = c("GAD1", "RHO", "ARR3", "GRIK1", "ISL1", "SLC6A9"), max.cutoff = 6, raster = TRUE)
+dev.off()
+```
+
+```{r}
+pdf("../Figures/Fig 2/Subclass_TF_PRs.pdf", w=14, h=8, useDingbats = FALSE)
+FeaturePlot(All_new, features = c("NRL", "CRX", "NR2E3","THRB","LHX4"),
+            ncol = 3, max.cutoff = 2, raster = TRUE)
+dev.off()
+pdf("../Figures/Fig 2/Subclass_TF_BCs.pdf", w=14, h=8, useDingbats = FALSE)
+FeaturePlot(All_new, features = c("FEZF2", "LHX3",
+                                  "ISL1", "ST18"), max.cutoff = 2,ncol=3, raster = TRUE)
+dev.off()
+
+pdf("../Figures/Fig 2/Subclass_TF_ACs.pdf", w=9, h=4, useDingbats = FALSE)
+FeaturePlot(All_new, features = c("MEIS2","TCF4"), max.cutoff = 6, raster = TRUE)
+dev.off()
+```
+
+
+```{r}
+
+plot_table <- avg_exp$integrated
+
+plot(plot_table[, "Tree_shrew_RGC"], plot_table[, "Tree_shrew_BP"], 
+     main = paste0("Cor: ", round(cor(plot_table[, "Tree_shrew_RGC"],  plot_table[, "Tree_shrew_BP"]), 2)))
+
+plot(plot_table[, "Tree_shrew_RGC"], plot_table[, "Tree_shrew_Rod"], 
+     main = paste0("Cor: ", round(cor(plot_table[, "Tree_shrew_RGC"],  plot_table[, "Tree_shrew_Rod"]), 2)))
+
+plot(plot_table[, "Tree_shrew_RGC"], plot_table[, "Mouse_RGC"], 
+     main = paste0("Cor: ", round(cor(plot_table[, "Tree_shrew_RGC"],  plot_table[, "Mouse_RGC"]), 2)))
+
+plot(plot_table[, "Tree_shrew_RGC"], plot_table[, "Human_RGC"], 
+     main = paste0("Cor: ", round(cor(plot_table[, "Tree_shrew_RGC"],  plot_table[, "Human_RGC"]), 2)))
+
+plot(plot_table[, "Tree_shrew_RGC"], plot_table[, "Ferret_RGC"], 
+     main = paste0("Cor: ", round(cor(plot_table[, "Tree_shrew_RGC"],  plot_table[, "Ferret_RGC"]), 2)))
+
+plot(plot_table[, "Tree_shrew_RGC"], plot_table[, "Ferret_BP"], 
+     main = paste0("Cor: ", round(cor(plot_table[, "Tree_shrew_RGC"],  plot_table[, "Ferret_BP"]), 2)))
+
+```
+
+
+## Integrated dendrogram
+```{r}
+All <- readRDS("../Species_OrthologMatrix/All_types_v3.rds")
+Idents(All) <- "species_class"
+DefaultAssay(All) <- "integrated"
+All <- BuildClusterTree(All)
+tree <- as.dendrogram.phylo(All@tools$BuildClusterTree)
+tree <- tree %>%
+  color_branches(k = 8)
+pdf("../Figures/Fig 2/int_dendro.pdf", w=8, h=8, useDingbats = FALSE)
+circlize_dendrogram(tree,
+                    dend_track_height = .8)
+dev.off()
+```
+
+```{r}
+DefaultAssay(All) <- "integrated"
+All <- BuildClusterTree(All, assay = "RNA")
+tree <- as.dendrogram.phylo(All@tools$BuildClusterTree)
+tree <- tree %>%
+  color_branches(k = 16)
+
+pdf("Figures/Fig 2/rna_dendro.pdf", w=8, h=8, useDingbats = FALSE)
+circlize_dendrogram(tree,
+                    dend_track_height = .8)
+dev.off()
+```
+
+## e - g
+```{r}
+All <- readRDS("../Species_OrthologMatrix/All_types_v3.rds")
+DefaultAssay(All) <- "RNA"
+All0 = All
+
+
+All = subset(All0, orig.ident %in% setdiff(unique(All@meta.data$orig.ident), c("Rhabdomys","Tree_shrew")))
+Idents(All) <- "cell_class"
+
+species.avg <- AverageExpression(object = All, assays = "RNA", group.by = "orig.ident")$RNA
+features <- rownames(species.avg)[rowSums(species.avg == 0) < 5]
+
+
+```
+
+### RGC
+```{r}
+Idents(All) <- "cell_class"
+RGC <- subset(All, idents = "RGC")
+Idents(RGC) <- "orig.ident"
+
+# Compute average gene expression matrix
+RGC.avg <- log1p(AverageExpression(object = RGC, assays = "RNA", slot = "counts")$RNA)
+RGC.avg <- RGC.avg[features,]
+
+spearman <- function(x) {
+    x <- as.matrix(x)
+    c = cor(x, method = "spearman")
+    res <- 1 - c
+    res <- as.dist(res)
+    attr(res, "method") <- "spearman"
+    return(res)
+}
+
+# Compute hierarchical tree using correlation distance
+pv_cor_c <- pvclust(RGC.avg, method.hclust = "complete", method.dist = spearman, nboot = 100)
+pv_cor_a <- pvclust(RGC.avg, method.hclust = "average", method.dist = "correlation", nboot = 100)
+
+
+
+# Plot the tree
+plot(pv_cor_c, main = "All features, Spearman correlation distance, complete linkage")
+plot(pv_cor_a, main = "All features, Spearman correlation distance, average linkage")
+
+# Plot a heatmap of correlations
+cor_mat <- cor(RGC.avg)
+diag(cor_mat) <- NA
+order <- colnames(RGC.avg)[pv_cor_a$hclust$order]
+file_table <- cor_mat[order, order]
+melt_table <- melt(file_table)
+
+ggplot(data = melt_table, aes(x=Var1, y=Var2, fill=value)) + 
+    geom_tile() +
+    theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1), 
+          axis.ticks = element_blank(), 
+          panel.border = element_blank(),
+          axis.title = element_blank()) +
+    scale_fill_viridis(option = "E", discrete = FALSE) +
+    coord_fixed()
+
+
+pdf("../Figures/Fig 2/RGC_tree.pdf", w=8, h=6, useDingbats = FALSE)
+plot(pv_cor_a, main = "All features, Spearman correlation distance, average linkage")
+dev.off()
+```
+
+### Rods
+```{r}
+Idents(All) <- "cell_class"
+Rods <- subset(All, idents = "Rod")
+Idents(Rods) <- "orig.ident"
+
+# Compute average gene expression matrix
+Rod.avg <- log1p(AverageExpression(object = Rods, assays = "RNA", slot = "counts")$RNA)
+
+
+# Compute hierarchical tree using correlation distance
+pv_cor_a <- pvclust(Rod.avg, method.hclust = "average", method.dist = spearman, nboot = 100)
+# Plot the tree
+plot(pv_cor_a, main = "All features, Spearman correlation distance, average linkage")
+
+# Plot a heatmap of correlations
+cor_mat <- cor(Rod.avg)
+diag(cor_mat) <- NA
+order <- colnames(Rod.avg)[pv_cor_a$hclust$order]
+file_table <- cor_mat[order, order]
+melt_table <- melt(file_table)
+
+#pdf("Figures/Fig 2/2b.pdf", w=8, h=6, useDingbats = FALSE)
+ggplot(data = melt_table, aes(x=Var1, y=Var2, fill=value)) + 
+    geom_tile() +
+    theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1), 
+          axis.ticks = element_blank(), 
+          panel.border = element_blank(),
+          axis.title = element_blank()) +
+    scale_fill_viridis(option = "E", discrete = FALSE) +
+    coord_fixed()
+
+```
+
+### BC
+```{r}
+Idents(All) <- "orig.ident"
+All <- subset(All0, orig.ident %in% setdiff(levels(Idents(All)), c("Tree_shrew", "Rhabdomys")))
+Idents(All) <- "cell_class"
+
+
+BC <- subset(All, idents = "BP")
+Idents(BC) <- "orig.ident"
+
+# Compute average gene expression matrix
+BC.avg <- log1p(AverageExpression(object = BC, assays = "RNA", slot = "counts")$RNA)
+
+BC.avg <- BC.avg[features,]
+
+# Compute hierarchical tree using correlation distance
+pv_cor_c <- pvclust(BC.avg, method.hclust = "complete", method.dist = spearman, nboot = 100)
+pv_cor_a <- pvclust(BC.avg, method.hclust = "average", method.dist = "correlation", nboot = 1000, parallel = TRUE)
+
+# Plot the tree
+plot(pv_cor_c, main = "All features, Correlation distance, complete linkage")
+plot(pv_cor_a, main = "All features, Spearman correlation distance, average linkage")
+
+# Plot a heatmap of correlations
+cor_mat <- cor(BC.avg)
+diag(cor_mat) = NA
+order <- colnames(BC.avg)[pv_cor_a$hclust$order]
+file_table <- cor_mat[order, order]
+melt_table <- melt(file_table)
+
+ggplot(data = melt_table, aes(x=Var1, y=Var2, fill=value)) + 
+    geom_tile() +
+    theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1), 
+          axis.ticks = element_blank(), 
+          panel.border = element_blank(),
+          axis.title = element_blank()) +
+    scale_fill_viridis(option = "E", discrete = FALSE) +
+    coord_fixed()
+
+
+pdf("../Figures/Fig 2/BC_tree.pdf", w=8, h=6, useDingbats = FALSE)
+plot(pv_cor_a, main = "All features, Spearman correlation distance, average linkage")
+dev.off()
+
+```
+
+### MG
+```{r}
+Idents(All) <- "cell_class"
+MG <- subset(All, idents = "MG")
+Idents(MG) <- "orig.ident"
+
+# Compute average gene expression matrix
+MG.avg <- log1p(AverageExpression(object = MG, assays = "RNA", slot = "counts")$RNA)
+
+
+# Compute hierarchical tree using correlation distance
+pv_cor_a <- pvclust(MG.avg, method.hclust = "average", method.dist = spearman, nboot = 100)
+# Plot the tree
+plot(pv_cor_a, main = "All features, Spearman correlation distance, average linkage")
+
+# Plot a heatmap of correlations
+cor_mat <- cor(MG.avg)
+diag(cor_mat) <- NA
+order <- colnames(MG.avg)[pv_cor_a$hclust$order]
+file_table <- cor_mat[order, order]
+melt_table <- melt(file_table)
+
+#pdf("Figures/Fig 2/2b.pdf", w=8, h=6, useDingbats = FALSE)
+ggplot(data = melt_table, aes(x=Var1, y=Var2, fill=value)) + 
+    geom_tile() +
+    theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1), 
+          axis.ticks = element_blank(), 
+          panel.border = element_blank(),
+          axis.title = element_blank()) +
+    scale_fill_viridis(option = "E", discrete = FALSE) +
+    coord_fixed()
+
+```
+
+### GabaAC
+```{r}
+Idents(All) <- "cell_class"
+GabaAC <- subset(All, idents = "GabaAC")
+Idents(GabaAC) <- "orig.ident"
+
+# Compute average gene expression matrix
+GabaAC.avg <- log1p(AverageExpression(object = GabaAC, assays = "RNA", slot = "counts")$RNA)
+
+
+# Compute hierarchical tree using correlation distance
+pv_cor_a <- pvclust(GabaAC.avg, method.hclust = "average", method.dist = spearman, nboot = 100)
+# Plot the tree
+plot(pv_cor_a, main = "All features, Spearman correlation distance, average linkage")
+
+# Plot a heatmap of correlations
+cor_mat <- cor(GabaAC.avg)
+diag(cor_mat) <- NA
+order <- colnames(GabaAC.avg)[pv_cor_a$hclust$order]
+file_table <- cor_mat[order, order]
+melt_table <- melt(file_table)
+
+#pdf("Figures/Fig 2/2b.pdf", w=8, h=6, useDingbats = FALSE)
+ggplot(data = melt_table, aes(x=Var1, y=Var2, fill=value)) + 
+    geom_tile() +
+    theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1), 
+          axis.ticks = element_blank(), 
+          panel.border = element_blank(),
+          axis.title = element_blank()) +
+    scale_fill_viridis(option = "E", discrete = FALSE) +
+    coord_fixed()
+
+```
+
+### Cone
+```{r}
+Idents(All) <- "cell_class"
+Cone <- subset(All, idents = "Cone")
+Idents(Cone) <- "orig.ident"
+
+# Compute average gene expression matrix
+Cone.avg <- log1p(AverageExpression(object = Cone, assays = "RNA", slot = "counts")$RNA)
+
+
+# Compute hierarchical tree using correlation distance
+pv_cor_a <- pvclust(Cone.avg, method.hclust = "average", method.dist = spearman, nboot = 100)
+# Plot the tree
+plot(pv_cor_a, main = "All features, Spearman correlation distance, average linkage")
+
+# Plot a heatmap of correlations
+cor_mat <- cor(GabaAC.avg)
+diag(cor_mat) <- NA
+order <- colnames(GabaAC.avg)[pv_cor_a$hclust$order]
+file_table <- cor_mat[order, order]
+melt_table <- melt(file_table)
+
+#pdf("Figures/Fig 2/2b.pdf", w=8, h=6, useDingbats = FALSE)
+ggplot(data = melt_table, aes(x=Var1, y=Var2, fill=value)) + 
+    geom_tile() +
+    theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1), 
+          axis.ticks = element_blank(), 
+          panel.border = element_blank(),
+          axis.title = element_blank()) +
+    scale_fill_viridis(option = "E", discrete = FALSE) +
+    coord_fixed()
+
+```
+
+### general
+```{r}
+obj <- subset(All, idents = c("GabaAC", "GlyAC"))
+Idents(obj) <- "species_class"
+
+# Compute average gene expression matrix
+obj.avg <- log1p(AverageExpression(object = obj, assays = "RNA")$RNA)
+
+
+# Compute hierarchical tree using correlation distance
+# pv_cor_c <- pvclust(obj.avg, method.hclust = "complete", method.dist = "correlation", nboot = 100)
+pv_cor_a <- pvclust(obj.avg, method.hclust = "average", method.dist = "correlation", nboot = 100)
+
+# Plot the tree
+plot(pv_cor_c, main = "All features, Correlation distance, complete linkage")
+plot(pv_cor_a, main = "All features, Correlation distance, average linkage")
+
+# Plot a heatmap of correlations
+cor_mat <- cor(obj.avg)
+
+order <- rev(c( "Zebrafish", "Chicken","Lizard","Opossum","Ferret",  "Pig",  "Cow", "Sheep", "Squirrel","Peromyscus","Rhabdomys","Mouse","Tree_shrew", "Marmoset", "Macaque","Human"))
+
+file_table <- cor_mat[order, order]
+melt_table <- melt(file_table)
+
+#pdf("Figures/Fig 2/2b.pdf", w=8, h=6, useDingbats = FALSE)
+ggplot(data = melt_table, aes(x=Var1, y=Var2, fill=value)) + 
+    geom_tile() +
+    theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1), 
+          axis.ticks = element_blank(), 
+          panel.border = element_blank(),
+          axis.title = element_blank()) +
+    scale_fill_viridis(option = "E", discrete = FALSE) +
+    coord_fixed()
+
+```
+
+# Branch length
+```{r}
+
+#All_sub <- subset(All, orig.ident != "Tree_shrew")
+#All_sub <- subset(All_sub, orig.ident != "Rhabdomys")
+
+Idents(All) <- "cell_class"
+obj <- subset(All, idents = "RGC")
+Idents(obj) <- "orig.ident"
+obj.avg <- log1p(AverageExpression(object = obj, assays = "RNA", slot = "counts")$RNA)
+obj.dist <- as.dist(1 - cor(as.matrix(obj.avg), method="spearman"))
+obj.tree <- nj(obj.dist)
+
+plot(obj.tree)
+
+```
+
+## Plot
+```{r}
+
+class_list <- c("RGC", "BP", "GabaAC", "GlyAC", "HC",  "Cone", "Rod","MG")
+
+lengths <- rep(0, length(class_list))
+names(lengths) <- class_list
+
+Idents(All) <- "cell_class"
+
+for(class in class_list){
+  obj <- subset(All, idents = class)
+  Idents(obj) <- "orig.ident"
+  obj.avg <- log1p(AverageExpression(object = obj, assays = "RNA")$RNA)
+  obj.avg <- obj.avg[features,]
+  obj.dist <- as.dist(1 - cor(as.matrix(obj.avg)))
+  obj.tree <- nj(obj.dist)
+  lengths[class] <- sum(as.data.frame(distRoot(obj.tree, method = "patristic")))
+
+}
+
+plot_df <- data.frame(class = names(lengths), len = lengths)
+
+color_code <- c('palevioletred1','orange', 'palegreen1', 'palegreen4',"turquoise1", "purple","blue","orchid3")
+names(color_code) <- class_list
+
+pdf("../Figures/Fig 2/Branch_length.pdf", w=8, h=3.5, useDingbats = FALSE)
+ggplot(data=plot_df, aes(x=class, y = len, fill = class))+
+  geom_bar(stat = "identity", width = .8) +
+  theme_bw() +
+  scale_x_discrete(limits=class_list) +
+  theme(legend.position = "none") +
+  xlab("Cell Class") + ylab("Total Branch Length") +
+  scale_y_continuous(breaks = 1:4, limits = c(0, 4), expand = c(0,0)) +
+  scale_fill_manual(values=color_code[sort(class_list)])
+dev.off()
+
+  
+```
+
+# Evolution time
+
+## Format table and format
+```{r}
+distance <- read.csv("../Species Evolution Distances.csv", header = TRUE)
+distance <- distance[1:17,1:18]
+rownames(distance) <- distance[,1]
+distance <- distance[,2:18]
+saveRDS(distance, "Evolution_Time_MYA.rds")
+```
+
+```{r}
+distance <- readRDS("Evolution_Time_MYA.rds")
+distance <- as.matrix(distance)
+```
+
+## Plot
+```{r}
+All <- readRDS("../Species_OrthologMatrix/All_types_v3.rds")
+DefaultAssay(All) <- "RNA"
+All0 = All
+
+
+All = subset(All0, orig.ident %in% setdiff(unique(All@meta.data$orig.ident), c("Rhabdomys","Tree_shrew")))
+
+Idents(All) <- "species_class"
+
+# Compute average gene expression matrix
+all.avg <- log1p(AverageExpression(object = All, assays = "RNA", slot = "counts")$RNA)
+all.avg <- all.avg[features,]
+all.cor <- cor(all.avg, method="spearman")
+all.dist <- dist(all.avg)
+
+
+# species_list <- c("Zebrafish", "Chicken", "Pig", "Ferret","Squirrel","Peromyscus","Mouse","Marmoset", "Human","Macaque", "Lizard","Opossum", "Tree_shrew", "Rhabdomys", "Cow", "Sheep")
+
+species_list <- c("Zebrafish", "Chicken", "Pig", "Ferret","Squirrel","Peromyscus","Mouse","Marmoset", "Human","Macaque", "Lizard","Opossum",  "Cow", "Sheep")
+
+
+class_list <- c("RGC", "BP", "AC", "HC",  "PR", "MG")
+
+
+plot_df <- as.matrix(data.frame(distance[species_list,species_list]))
+plot_df <- as.data.frame(as.table(plot_df))
+colnames(plot_df) = c("Species1","Species2","MYA")
+
+for(class in class_list){
+cor.mat <- all.cor[paste0(species_list,"_", class), paste0(species_list, "_",class)]
+colnames(cor.mat) = species_list; rownames(cor.mat) = species_list
+cor_df <- as.matrix(data.frame(cor.mat[species_list,species_list]))
+cor_df <- as.data.frame(as.table(cor_df))
+
+plot_df[, class] = cor_df[,3]
+}
+
+plot_df <- melt(plot_df, id.vars = c(1,2,3))
+
+
+```
+
+```{r}
+
+#shuffle order
+plot_df <- plot_df[sample(1:dim(plot_df)[1], dim(plot_df)[1],  replace = FALSE),]
+
+pdf("../Figures/Fig 2/Evo_time.pdf", w=8, h=4.5, useDingbats = FALSE)
+ggplot(plot_df, aes(x=MYA,y=value,group=variable)) +
+  geom_jitter(aes(color=variable, shape=variable),  size = 1.5, width = 4, height = 0) +
+  xlab("Evolution Time (MYA)") + ylab("Spearman Correlation") +
+  theme_bw() +
+  scale_color_manual(values=c('palevioletred1','orange',  'palegreen4',"turquoise1", "purple", "orchid3"))
+dev.off()
+
+
+
+
+```
+
+## Plot attempt 2
+```{r}
+PlotByClass <- function(df, class, color, bottom = FALSE){
+  sub_df <- subset(plot_df, variable == class)
+  if(bottom){
+    p <- ggplot(sub_df, aes(x=MYA,y=value)) +
+    geom_jitter(size = 1, color = color, width = 2) + geom_smooth(color="gray50", size=0.5, method = "loess") + 
+    theme_classic()  +
+    theme(axis.title.x = element_blank(),
+          axis.title.y = element_blank()) +
+    scale_y_continuous(breaks = 2:5 *.2,limits = c(.35,1.05)) +
+    scale_x_continuous(breaks = c(0, 30, 90, 160, 300, 400))
+  } else{
+  p <- ggplot(sub_df, aes(x=MYA,y=value)) +
+    geom_jitter(size = 1, color = color, width = 2) + geom_smooth(color="gray50", size=0.5, method = "loess") + 
+    theme_classic() +
+    theme(axis.ticks.x = element_blank(),
+          axis.text.x = element_blank(),
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank()) +
+    scale_y_continuous(breaks = 2:5 *.2, limits = c(.35,1.05)) +
+    scale_x_continuous(breaks = c(0, 30, 90, 160, 300, 400))
+  }
+  return(p)
+}
+
+pdf("../Figures/Fig 2/Evo_time_stacked_v2.pdf", w=7, h=5, useDingbats = FALSE)
+p1 = PlotByClass(plot_df, "RGC", 'palevioletred1')
+p2 = PlotByClass(plot_df, "BP", 'orange')
+p3 = PlotByClass(plot_df, "AC", 'palegreen4')
+p4 = PlotByClass(plot_df, "HC", 'turquoise1', bottom=TRUE)
+p5 = PlotByClass(plot_df, "PR", 'purple', bottom=TRUE)
+p6 = PlotByClass(plot_df, "MG", 'orchid3', bottom=TRUE)
+plot_grid(p1,p2,p3,p4,p5,p6, nrow=2, ncol=3)
+dev.off()
+
+pdf("../Figures/Fig 2/Evo_time_stacked.pdf", w=6, h=4, useDingbats = FALSE)
+ggdraw() +
+  draw_plot(PlotByClass(plot_df, "RGC", 'palevioletred1', bottom = TRUE), x=0, y=0, width = 1, height = 1/3) +
+  draw_plot(PlotByClass(plot_df, "BP", 'orange'), x=0, y=1/3, width = 1, height = 1/3) +
+  draw_plot(PlotByClass(plot_df, "AC", 'palegreen4'), x=0, y=2/3, width = 1, height = 1/3) +
+  draw_plot(PlotByClass(plot_df, "HC", 'turquoise1', bottom = TRUE), x=1, y=0, width = 1, height = 1/3) +
+    draw_plot(PlotByClass(plot_df, "PR", 'purple'), x=1, y=1/3, width = 1, height = 1/3) +
+    draw_plot(PlotByClass(plot_df, "MG", 'orchid3'), x=1, y=2/3, width = 1, height = 1/3) 
+dev.off()
+
+  
+```
+
+
+
+# Cophenetic Distance
+```{r}
+All <- readRDS("../Species_OrthologMatrix/All_types_v3.rds")
+DefaultAssay(All) <- "RNA"
+Idents(All) <- "cell_class"
+All0 = All
+
+All = subset(All0, orig.ident %in% setdiff(unique(All@meta.data$orig.ident), c("Rhabdomys","Tree_shrew")))
+Idents(All) <- "cell_class"
+
+species.avg <- AverageExpression(object = All, assays = "RNA", group.by = "orig.ident")$RNA
+features <- rownames(species.avg)[rowSums(species.avg == 0) < 5]
+
+distance <- readRDS("Evolution_Time_MYA.rds")
+distance <- as.matrix(distance)
+```
+
+
+## Evo time linear fit
+```{r}
+
+lm_eqn <- function(df){
+    m <- lm(value ~ MYA, df);
+    eq <- substitute(italic(y) == a + b %.% italic(x)*","~~italic(r)^2~"="~r2, 
+         list(a = format(unname(coef(m)[1]), digits = 2),
+              b = format(unname(coef(m)[2]), digits = 2),
+             r2 = format(summary(m)$r.squared, digits = 3)))
+    as.character(as.expression(eq));
+}
+
+PlotByClass <- function(df, class, color, bottom = FALSE){
+  sub_df <- subset(plot_df, variable == class)
+  if(bottom){
+    p <- ggplot(sub_df, aes(x=MYA,y=value)) +
+    geom_jitter(size = 1, color = color, width = 2) + geom_smooth(data = subset(sub_df, MYA < 92),color="black", method = "lm") + geom_smooth(color="gray50", size=0.5, method = "loess") + 
+    theme_classic()  +
+    theme(axis.title.x = element_blank(),
+          axis.title.y = element_blank()) +
+    scale_y_continuous(breaks = 2:5 *.2,limits = c(.35,1.05)) +
+    scale_x_continuous(breaks = c(0, 30, 90, 160, 300, 400)) + geom_text(x = 250, y = 0.95, label = lm_eqn(subset(sub_df, MYA < 100)), parse = TRUE)
+  } else{
+  p <- ggplot(sub_df, aes(x=MYA,y=value)) +
+    geom_jitter(size = 1, color = color, width = 2) + geom_smooth(data = subset(sub_df, MYA < 92),color="black", method = "lm") + geom_smooth(color="gray50", size=0.5, method = "loess") + 
+    theme_classic() +
+    theme(axis.ticks.x = element_blank(),
+          axis.text.x = element_blank(),
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank()) +
+    scale_y_continuous(breaks = 2:5 *.2, limits = c(.35,1.05)) +
+    scale_x_continuous(breaks = c(0, 30, 90, 160, 300, 400)) + geom_text(x = 250, y = 0.95, label = lm_eqn(subset(sub_df, MYA < 100)), parse = TRUE)
+  }
+  return(p)
+}
+
+pdf("../Figures/Fig 2/Evo_time_stacked_with_lm_supp_v2.pdf", w=9, h=7, useDingbats = FALSE)
+p1 = PlotByClass(plot_df, "RGC", 'palevioletred1')
+p2 = PlotByClass(plot_df, "BP", 'orange')
+p3 = PlotByClass(plot_df, "AC", 'palegreen4')
+p4 = PlotByClass(plot_df, "HC", 'turquoise1', bottom=TRUE)
+p5 = PlotByClass(plot_df, "PR", 'purple', bottom=TRUE)
+p6 = PlotByClass(plot_df, "MG", 'orchid3', bottom=TRUE)
+plot_grid(p1,p2,p3,p4,p5,p6, nrow=2, ncol=3)
+dev.off()
+
+pdf("../Figures/Fig 2/Evo_time_stacked.pdf", w=6, h=4, useDingbats = FALSE)
+ggdraw() +
+  draw_plot(PlotByClass(plot_df, "RGC", 'palevioletred1', bottom = TRUE), x=0, y=0, width = 1, height = 1/3) +
+  draw_plot(PlotByClass(plot_df, "BP", 'orange'), x=0, y=1/3, width = 1, height = 1/3) +
+  draw_plot(PlotByClass(plot_df, "AC", 'palegreen4'), x=0, y=2/3, width = 1, height = 1/3) +
+  draw_plot(PlotByClass(plot_df, "HC", 'turquoise1', bottom = TRUE), x=1, y=0, width = 1, height = 1/3) +
+    draw_plot(PlotByClass(plot_df, "PR", 'purple'), x=1, y=1/3, width = 1, height = 1/3) +
+    draw_plot(PlotByClass(plot_df, "MG", 'orchid3'), x=1, y=2/3, width = 1, height = 1/3) 
+dev.off()
+
+  
+```
+
+```{r}
+Idents(All) <- "species_class"
+
+# Compute average gene expression matrix
+all.avg <- log1p(AverageExpression(object = All, assays = "RNA", slot = "counts")$RNA)
+all.avg <- all.avg[features,]
+all.cor <- cor(all.avg, method="spearman")
+
+#species_list <- c("Zebrafish", "Chicken", "Pig", "Ferret","Squirrel","Peromyscus","Mouse","Marmoset", "Human","Macaque", "Lizard","Opossum", "Tree_shrew", "Rhabdomys", "Cow", "Sheep")
+
+species_list <- c("Zebrafish", "Chicken", "Pig", "Ferret","Squirrel","Peromyscus","Mouse","Marmoset", "Human","Macaque", "Lizard","Opossum",  "Cow", "Sheep")
+
+class_list <- c("RGC", "BP", "AC", "HC",  "PR", "MG")
+
+plot_df <- as.matrix(data.frame(distance[species_list,species_list]))
+plot_df <- as.data.frame(as.table(plot_df))
+colnames(plot_df) = c("Species1","Species2","MYA")
+
+for(class in class_list){
+  cor.mat <- all.cor[paste0(species_list,"_", class), paste0(species_list, "_",class)]
+  class.dist <- as.dist(1 - cor.mat)
+  class.tree <- hclust(class.dist, method = "average")
+  coph <- as.matrix(cophenetic(class.tree))
+  colnames(coph) = species_list
+  rownames(coph) = species_list
+  coph <- melt(coph)
+  plot_df[, class] = coph[,3]
+}
+
+plot_df <- melt(plot_df, id.vars = c(1,2,3))
+  
+#pdf("../Figures/Fig 2/Cophenetic_dist.pdf", w=8, h=4.5, useDingbats = FALSE)
+ggplot(plot_df, aes(x=MYA,y=value,group=variable)) +
+  geom_jitter(aes(color=variable),  size = 1, width = 4, height = 0) +
+  xlab("Evolution Time (MYA)") + ylab("Cophenetic Distance") +
+  theme_bw() +
+  scale_color_manual(values=c('palevioletred1','orange', 'palegreen1', 'palegreen4',"turquoise1", "purple","blue", "orchid3"))
+#dev.off()
+```
+
+
+## Plot attempt 2
+```{r}
+PlotByClass <- function(df, class, color, bottom = FALSE){
+  sub_df <- subset(plot_df, variable == class)
+  if(bottom){
+    p <- ggplot(sub_df, aes(x=MYA,y=value)) +
+    geom_jitter(size = 1, color = color, width = 2) + geom_smooth(color="gray50", size=0.5 ) +
+    theme_classic()  +
+    theme(axis.title.x = element_blank(),
+          axis.title.y = element_blank()) +
+    scale_y_continuous(breaks = 0:3 *.2,limits = c(-.05,.65)) +
+    scale_x_continuous(breaks = c(0, 30, 90, 160, 300, 400))
+  } else{
+  p <- ggplot(sub_df, aes(x=MYA,y=value)) +
+    geom_jitter(size = 1, color = color, width = 2) + geom_smooth(color="gray50", size=0.5 ) +
+    theme_classic() +
+    theme(axis.ticks.x = element_blank(),
+          axis.text.x = element_blank(),
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank()) +
+    scale_y_continuous(breaks = 0:3 *.2,limits = c(-.05,.65)) +
+    scale_x_continuous(breaks = c(0, 30, 90, 160, 300, 400))
+  }
+  return(p)
+}
+
+pdf("../Figures/Fig 2/Cophenetic_stacked_stacked_v2.pdf", w=7, h=5, useDingbats = FALSE)
+p1 = PlotByClass(plot_df, "RGC", 'palevioletred1')
+p2 = PlotByClass(plot_df, "BP", 'orange')
+p3 = PlotByClass(plot_df, "AC", 'palegreen4')
+p4 = PlotByClass(plot_df, "HC", 'turquoise1', bottom=TRUE)
+p5 = PlotByClass(plot_df, "PR", 'purple', bottom=TRUE)
+p6 = PlotByClass(plot_df, "MG", 'orchid3', bottom=TRUE)
+plot_grid(p1,p2,p3,p4,p5,p6, nrow=2, ncol=3)
+dev.off()
+
+pdf("../Figures/Fig 2/Cophenetic_stacked.pdf", w=6, h=8, useDingbats = FALSE)
+ggdraw() +
+  draw_plot(PlotByClass(plot_df, "RGC", 'palevioletred1', bottom = TRUE), x=0, y=0, width = 1, height = 1/6) +
+  draw_plot(PlotByClass(plot_df, "BP", 'orange'), x=0, y=1/6, width = 1, height = 1/6) +
+  draw_plot(PlotByClass(plot_df, "AC", 'palegreen4'), x=0, y=2/6, width = 1, height = 1/6) +
+  draw_plot(PlotByClass(plot_df, "HC", 'turquoise1'), x=0, y=3/6, width = 1, height = 1/6) +
+    draw_plot(PlotByClass(plot_df, "PR", 'purple'), x=0, y=4/6, width = 1, height = 1/6) +
+    draw_plot(PlotByClass(plot_df, "MG", 'orchid3'), x=0, y=5/6, width = 1, height = 1/6) 
+dev.off()
+```
+
+# Extended Figure 8
+```{r}
+All <- readRDS("../Species_OrthologMatrix/All_classes_lamprey_v2.rds")
+All@meta.data$subclass <- All@meta.data$cell_class
+Idents(All) <- "seurat_clusters"
+All@meta.data[WhichCells(All, idents = 8), "subclass"] <- "BC_ON"
+All@meta.data[WhichCells(All, idents = 9), "subclass"] <- "BC_OFF"
+
+Idents(All) <- "class"
+All@meta.data[WhichCells(All, idents = c("GabaAC", "GlyAC")), "class"] <- "AC"
+All@meta.data[WhichCells(All, idents = c("Rod", "Cone")), "class"] <- "PR"
+
+All@meta.data$species_class <- paste0(All@meta.data$orig.ident, "_", All@meta.data$class)
+All@meta.data$species_subclass <- paste0(All@meta.data$orig.ident, "_", All@meta.data$subclass)
+```
+
+## Feature DotPlots
+### Extract expression
+```{r}
+All <- readRDS("../Species_OrthologMatrix/All_classes_lamprey_v2.rds")
+
+species_list <- unique(All@meta.data$orig.ident)
+
+features <- c("GAD1", "RHO", "ARR3", "GRIK1", "ISL1", "SLC6A9", "NRL", "CRX", "NR2E3","THRB","LHX4","MEIS2","TCF4","FEZF2","LHX3","ST18")
+
+new_counts <- rbind(All@assays$RNA@counts, All@assays$RNA@counts[1:length(features),] - All@assays$RNA@counts[1:length(features),])
+
+rownames(new_counts)[(nrow(new_counts)-length(features)+1):nrow(new_counts)] <- features
+
+species_list <- species_list[8:17]
+
+for(species in species_list){
+  print(species)
+  if(species == "Human"){
+    species_obj <- readRDS("../Species_Objects/Human_initial.rds")
+  }
+  else{
+    species_obj <- readRDS(paste0("../Species_Initial/", species, "_initial.rds"))
+  }
+  species_obj <- UpperCase_genes(species_obj)
+  
+  # Find cells
+  all_cells <- rownames(All@meta.data)[which(All@meta.data$orig.ident == species)]
+  species_cells <- unlist(strsplit(all_cells, ";"))[1:length(all_cells)*2]
+  
+  # Fix 
+    all_cells <- all_cells[species_cells %in% colnames(species_obj@assays$RNA@counts)]
+  species_cells <- species_cells[species_cells %in% colnames(species_obj@assays$RNA@counts)]
+  
+  # Extract expression
+  features_in <- features[features %in% rownames(species_obj@assays$RNA@counts)]
+  new_counts[features_in, all_cells] <-   species_obj@assays$RNA@counts[features_in, species_cells]
+  
+}
+
+```
+
+```{r}
+All_new <- CreateSeuratObject(new_counts, names.delim = ";")
+All_new <- NormalizeData(All_new)
+All_new <- UpperCase_genes(All_new)
+All_new@reductions$umap <- All@reductions$umap
+All_new@meta.data <-  All@meta.data
+```
+
+### Plotting - DotPlot
+```{r}
+
+features <- c("THRB", "LHX4", "ARR3", "RHO", "NRL", "NR2E3","TCF4", "SLC6A9", "MEIS2", "GAD1",  "ISL1", "ST18", "GRIK1", "FEZF2", "LHX3")
+
+
+species_list <- rev(c("Lamprey", "Zebrafish", "Chicken","Lizard","Opossum","Ferret",  "Pig",  "Cow", "Sheep", "Squirrel","Peromyscus","Rhabdomys","Mouse","Tree_shrew", "Marmoset", "Macaque","Human"))
+
+order <- c(paste0(species_list, "_BC_ON"), paste0(species_list, "_BC_OFF"), paste0(species_list, "_GabaAC"), paste0(species_list, "_GlyAC"), paste0(species_list, "_Rod"), paste0(species_list, "_Cone"))
+
+ugh <- subset(All_new, species_subclass %in% order)
+ugh$plotting <- factor(ugh$species_subclass, levels = order)
+Idents(ugh) <- "plotting"
+
+pdf("../Figures/Fig 2/Supp8_dp.pdf", w=7, h=5, useDingbats = FALSE)
+DotPlot(ugh, features = features) + RotatedAxis()
+dev.off()
+```
+
+
+### Plotting - heatmap
+```{r}
+features <- c("THRB", "LHX4", "ARR3", "RHO", "NRL", "NR2E3","TCF4", "SLC6A9", "MEIS2", "GAD1", "GRIK1", "FEZF2", "LHX3", "ISL1", "ST18")
+
+species_list <- rev(c("Zebrafish", "Chicken","Lizard","Opossum","Ferret",  "Pig",  "Cow", "Sheep", "Squirrel","Peromyscus","Rhabdomys","Mouse","Tree_shrew", "Marmoset", "Macaque","Human"))
+
+species_list <- rev(c("Lamprey", "Zebrafish", "Chicken","Lizard","Opossum","Ferret",  "Pig",  "Cow", "Sheep", "Squirrel","Peromyscus","Rhabdomys","Mouse","Tree_shrew", "Marmoset", "Macaque","Human"))
+
+
+order <- c(paste0(species_list, "_BC_ON"), paste0(species_list, "_BC_OFF"), paste0(species_list, "_GabaAC"), paste0(species_list, "_GlyAC"), paste0(species_list, "_Rod"), paste0(species_list, "_Cone"))
+
+avg_exp <- AverageExpression(All_new, features = features, assays = "RNA", slot = "counts", group.by = "species_subclass")$RNA
+
+# Normalize
+log_exp <- log1p(avg_exp)
+class_norm <- avg_exp
+for(species in species_list){
+  species_exp <- avg_exp[, grep(species, colnames(avg_exp))]
+  species_norm <- species_exp / apply(species_exp, 1, max)
+  class_norm[, grep(species, colnames(avg_exp))] <- species_norm
+}
+
+class_norm <- as.data.frame(class_norm)
+class_norm[, c("Lamprey_BC_ON", "Lamprey_BC_OFF", "Lamprey_Rod")] <- NaN
+file_table <- as.data.frame(class_norm[, order])
+file_table$gene <- rownames(file_table)
+melt_table <- melt(file_table, id.vars = "gene")
+
+
+pdf("../Figures/Fig 2/Supp8_hm.pdf", w=8, h=10, useDingbats = FALSE)
+ggplot(data = melt_table, aes(x=gene, y=variable, fill=value)) +
+    geom_tile(colour="white", size=0.2) +
+  guides(fill=guide_legend(title="Norm. Exp.")) + 
+    theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1),
+          axis.text.y = element_blank(),
+          panel.border = element_blank(),
+          axis.title = element_blank()) +
+    scale_fill_gradient(low = "white",  high = "#447241", na.value = "gray70") + scale_x_discrete(limits = features) 
+dev.off()
+
+```
+
+
+## Corr mat
+```{r}
+All <- readRDS("../Species_OrthologMatrix/All_types_v3.rds")
+All <- FindClusters(All, resolution = 0.3)
+DefaultAssay(All) <- "RNA"
+FeaturePlot(All, features = c("Grik1", "Isl1"))
+DimPlot(All, label = TRUE)
+DotPlot(All, features = c("Grik1", "Isl1", "Prkca"))
+
+All@meta.data$subclass <- All@meta.data$cell_class
+Idents(All) <- "seurat_clusters"
+All@meta.data[WhichCells(All, idents = c(9,10)), "subclass"] <- "BC_ON"
+All@meta.data[WhichCells(All, idents = 7), "subclass"] <- "BC_OFF"
+
+All@meta.data$species_subclass <- paste0(All@meta.data$orig.ident, "_", All@meta.data$subclass)
+```
+
+```{r}
+avg_exp <- AverageExpression(All, group.by = "species_subclass", slot = "data")
+
+cor_mat <- cor(avg_exp$integrated)
+
+species_list <- rev(c("Zebrafish", "Chicken","Lizard","Opossum","Ferret",  "Pig",  "Cow", "Sheep", "Squirrel","Peromyscus","Rhabdomys","Mouse","Tree_shrew", "Marmoset", "Macaque","Human"))
+
+order <- c(paste0(species_list, "_BC_ON"), paste0(species_list, "_BC_OFF"), paste0(species_list, "_GabaAC"), paste0(species_list, "_GlyAC"), paste0(species_list, "_Rod"), paste0(species_list, "_Cone"))
+
+file_table <- cor_mat[order, order]
+melt_table <- melt(file_table)
+
+pdf("../Figures/Fig 2/Supp8_cor_hm_byclasses.pdf", w=8, h=6, useDingbats = FALSE)
+ggplot(data = melt_table, aes(x=Var1, y=Var2, fill=value)) + 
+    geom_tile() +
+    theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1), 
+          axis.ticks = element_blank(), 
+          panel.border = element_blank(),
+          axis.title = element_blank()) +
+    scale_fill_viridis(option = "E", discrete = FALSE) +
+    coord_fixed()
+dev.off()
+
+
+```
+
+
+```{r}
+class_list <- c("BC_ON", "BC_OFF", "GabaAC", "GlyAC", "Rod", "Cone")
+
+order <- c()
+for(species in species_list){
+  order <- c(order, paste0(species,"_", class_list))
+}
+
+
+file_table <- cor_mat[order, order]
+melt_table <- melt(file_table)
+
+pdf("../Figures/Fig 2/Supp8_cor_hm_byspecies.pdf", w=8, h=6, useDingbats = FALSE)
+ggplot(data = melt_table, aes(x=Var1, y=Var2, fill=value)) + 
+    geom_tile() +
+    theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1), 
+          axis.ticks = element_blank(), 
+          panel.border = element_blank(),
+          axis.title = element_blank()) +
+    scale_fill_viridis(option = "E", discrete = FALSE) +
+    coord_fixed()
+dev.off()
+```
+
+
+
+# Scratch
+```{r}
+plot(RGC.avg[, "Tree_shrew"], RGC.avg[, "Mouse"])
+plot(RGC.avg[, "Tree_shrew"], RGC.avg[, "Zebrafish"])
+plot(RGC.avg[, "Tree_shrew"], RGC.avg[, "Ferret"])
+
+plot(RGC.avg[, "Rhabdomys"], RGC.avg[, "Mouse"])
+plot(RGC.avg[, "Rhabdomys"], RGC.avg[, "Zebrafish"])
+plot(RGC.avg[, "Rhabdomys"], RGC.avg[, "Ferret"])
+
+
+```
+
+```{r}
+Idents(All) <- "orig.ident"
+subset(All, idents = "Ferret")
+```
+
+
