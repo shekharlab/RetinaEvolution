@@ -1,0 +1,855 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Load libraries
+```{r}
+library(tidyverse)
+# library(ggtree)
+library(Seurat)
+library(ggplot2)
+library(reshape2)
+library(dplyr)
+require(xgboost)
+source("../utils/xgboost_train.R")
+source("../utils/utilFxns.R")
+source("../utils/plottingFxns.R")
+source("../utils/xgboost_train.R")
+#library(velocyto.R)
+```
+
+## Preprocessing
+# Load files and generate full object
+Set data directory and load loom files
+```{r}
+data_dir <- "/Users/joshhahn/Google Drive File Stream/My Drive/shekharlab_data/projects/Mouse/Velocyto/"
+CTRLAllOther1 <- read.loom.matrices(file = paste0(data_dir, "CTRLC57AllOther1/possorted_genome_bam_Z0OYT.loom"), engine = "hdf5r")
+CTRLAllOther2 <- read.loom.matrices(file = paste0(data_dir, "CTRLC57AllOther2/possorted_genome_bam_H5JEB.loom"), engine = "hdf5r")
+ONCAllOther1 <- read.loom.matrices(file = paste0(data_dir, "ONC48hC57AllOther1/possorted_genome_bam_EQ1JV.loom"), engine = "hdf5r")
+ONCAllOther2 <- read.loom.matrices(file = paste0(data_dir, "ONC48hC57AllOther2/possorted_genome_bam_XG5P4.loom"), engine = "hdf5r")
+
+data_dir <- "/Users/joshhahn/Google Drive File Stream/My Drive/shekharlab_data/projects/Mouse/Velocyto/adultRGC/"
+aRGC1 <- read.loom.matrices(file = paste0(data_dir, "aRGC1/possorted_genome_bam_LLCK9.loom"), engine = "hdf5r")
+aRGC2 <- read.loom.matrices(file = paste0(data_dir, "aRGC2/possorted_genome_bam_LJYEG.loom"), engine = "hdf5r")
+aRGC3 <- read.loom.matrices(file = paste0(data_dir, "aRGC3/possorted_genome_bam_A1W80.loom"), engine = "hdf5r")
+aRGC4 <- read.loom.matrices(file = paste0(data_dir, "aRGC4/possorted_genome_bam_Q6IA4.loom"), engine = "hdf5r")
+aRGC5 <- read.loom.matrices(file = paste0(data_dir, "aRGC5/possorted_genome_bam_6OE0V.loom"), engine = "hdf5r")
+aRGC6 <- read.loom.matrices(file = paste0(data_dir, "aRGC6/possorted_genome_bam_AB8Y6.loom"), engine = "hdf5r")
+aRGC7 <- read.loom.matrices(file = paste0(data_dir, "aRGC7/possorted_genome_bam_Z2WVM.loom"), engine = "hdf5r")
+aRGC8 <- read.loom.matrices(file = paste0(data_dir, "aRGC8/possorted_genome_bam_VBDZU.loom"), engine = "hdf5r")
+aRGC9 <- read.loom.matrices(file = paste0(data_dir, "aRGC9/possorted_genome_bam_1TSPH.loom"), engine = "hdf5r")
+aRGC10 <- read.loom.matrices(file = paste0(data_dir, "aRGC10/possorted_genome_bam_Q5GMI.loom"), engine = "hdf5r")
+```
+
+Generate count matrices by adding intronic and exonic reads
+```{r}
+CTRL1_mat = CTRLAllOther1$spliced + CTRLAllOther1$unspliced
+CTRL2_mat = CTRLAllOther2$spliced + CTRLAllOther2$unspliced
+ONC1_mat = ONCAllOther1$spliced + ONCAllOther1$unspliced
+ONC2_mat = ONCAllOther2$spliced + ONCAllOther2$unspliced
+
+RGC1_mat = aRGC1$spliced + aRGC1$unspliced
+RGC2_mat = aRGC2$spliced + aRGC2$unspliced
+RGC3_mat = aRGC3$spliced + aRGC3$unspliced
+RGC4_mat = aRGC4$spliced + aRGC4$unspliced
+RGC5_mat = aRGC5$spliced + aRGC5$unspliced
+RGC6_mat = aRGC6$spliced + aRGC6$unspliced
+RGC7_mat = aRGC7$spliced + aRGC7$unspliced
+RGC8_mat = aRGC8$spliced + aRGC8$unspliced
+RGC9_mat = aRGC9$spliced + aRGC9$unspliced
+RGC10_mat = aRGC10$spliced + aRGC10$unspliced
+
+Mouse_mat <- cbind(CTRL1_mat, CTRL2_mat, ONC1_mat, ONC2_mat, RGC1_mat, RGC2_mat, RGC3_mat, RGC4_mat, RGC5_mat, RGC6_mat, RGC7_mat, RGC8_mat, RGC9_mat, RGC10_mat)
+```
+
+Create Seurat object and set file information
+```{r}
+Mouse <- CreateSeuratObject(Mouse_mat, names.delim = ":")
+Mouse@meta.data[colnames(CTRL1_mat), 'orig.file'] = "CTRLC57AllOther1"
+Mouse@meta.data[colnames(CTRL2_mat), 'orig.file'] = "CTRLC57AllOther2"
+Mouse@meta.data[colnames(ONC1_mat), 'orig.file'] = "ONC48hC57AllOther1"
+Mouse@meta.data[colnames(ONC2_mat), 'orig.file'] = "ONC48hC57AllOther2"
+Mouse@meta.data[colnames(RGC1_mat), 'orig.file'] = "adultRGC1"
+Mouse@meta.data[colnames(RGC2_mat), 'orig.file'] = "adultRGC2"
+Mouse@meta.data[colnames(RGC3_mat), 'orig.file'] = "adultRGC3"
+Mouse@meta.data[colnames(RGC4_mat), 'orig.file'] = "adultRGC4"
+Mouse@meta.data[colnames(RGC5_mat), 'orig.file'] = "adultRGC5"
+Mouse@meta.data[colnames(RGC6_mat), 'orig.file'] = "adultRGC6"
+Mouse@meta.data[colnames(RGC7_mat), 'orig.file'] = "adultRGC7"
+Mouse@meta.data[colnames(RGC8_mat), 'orig.file'] = "adultRGC8"
+Mouse@meta.data[colnames(RGC9_mat), 'orig.file'] = "adultRGC9"
+Mouse@meta.data[colnames(RGC10_mat), 'orig.file'] = "adultRGC10"
+
+Mouse@meta.data[colnames(CTRL1_mat), 'animal'] = 1
+Mouse@meta.data[colnames(CTRL2_mat), 'animal'] = 1
+Mouse@meta.data[colnames(ONC1_mat), 'animal'] = 2
+Mouse@meta.data[colnames(ONC2_mat), 'animal'] = 2
+Mouse@meta.data[colnames(RGC1_mat), 'animal'] = 3
+Mouse@meta.data[colnames(RGC2_mat), 'animal'] = 3
+Mouse@meta.data[colnames(RGC3_mat), 'animal'] = 4
+Mouse@meta.data[colnames(RGC4_mat), 'animal'] = 4
+Mouse@meta.data[colnames(RGC5_mat), 'animal'] = 4
+Mouse@meta.data[colnames(RGC6_mat), 'animal'] = 4
+Mouse@meta.data[colnames(RGC7_mat), 'animal'] = 5
+Mouse@meta.data[colnames(RGC8_mat), 'animal'] = 5
+Mouse@meta.data[colnames(RGC9_mat), 'animal'] = 5
+Mouse@meta.data[colnames(RGC10_mat), 'animal'] = 5
+
+saveRDS(Mouse, "../Species_Objects/Mouse_initial.rds")
+```
+
+```{r}
+VlnPlot(Mouse, features = "nCount_RNA", pt.size = 0)
+VlnPlot(Mouse, features = "nFeature_RNA", pt.size = 0)
+```
+
+```{r}
+Mouse <- ClusterSeurat(Mouse)
+saveRDS(Mouse, file = "../Species_Objects/Mouse_initial.rds")
+```
+
+# Segregate into major cell classes
+Visualize initial clusters
+```{r}
+# Mouse <- readRDS("../Species_Objects/Mouse_initial.rds")
+DimPlot(Mouse, label = TRUE)
+DimPlot(Mouse, group.by = "orig.file", cells = sample(colnames(Mouse)))
+DimPlot(Mouse, group.by = "animal", cells = sample(colnames(Mouse)))
+VlnPlot(Mouse, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(Mouse, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+```
+
+Look for major retinal cell classes
+```{r}
+Mouse <- readRDS("../Species_Objects/Mouse_initial.rds")
+# Mouse <- DendroOrder(Mouse)
+# Mouse <- UpperCase_genes(Mouse)
+
+RGC_markers= c("RBPMS", "SLC17A6", "POU6F2")
+BC_markers=c("VSX2", "CABP5", "GRIK1", "OTX2", "PRKCA")
+AC_markers=c("TFAP2A", "GAD2", "SLC6A9")
+HC_markers=c("ONECUT1", "LHX1", "CALB1", "TPM3")
+Cone_markers=c("PDE6H", "CRX", "ARR3")
+Rod_markers=c("SAG", "PDC", "RHO")
+MG_markers=c("SLC1A3","RLBP1",  "APOE")
+
+DotPlot(Mouse, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Cone_markers, Rod_markers, MG_markers), group.by = "dendro_order") + RotatedAxis()
+```
+
+Annotate clusters using DE genes and Dot plot of marker genes
+```{r}
+Idents(Mouse) <- "seurat_clusters"
+Mouse_genes <- FindAllMarkers(Mouse)
+saveRDS(Mouse_genes, file = "../Marker_Genes/Mouse_genes_initial.rds")
+```
+
+```{r}
+PlotClusterTree(Mouse)
+tree <- Mouse@tools$BuildClusterTree
+
+Mouse@meta.data$cell_class <- "Other"
+
+BC_branch = Seurat:::GetLeftDescendants(tree, 73) - 1
+Mouse@meta.data[WhichCells(Mouse, idents = c(BC_branch,11,13)),]$cell_class = "BP"
+
+RGC_branch = Seurat:::GetLeftDescendants(tree, 84) - 1
+Mouse@meta.data[WhichCells(Mouse, idents = c(RGC_branch,51,66)),]$cell_class = "RGC"
+
+AC_branch = Seurat:::GetRightDescendants(tree, 88) - 1
+Mouse@meta.data[WhichCells(Mouse, idents = c(AC_branch, 62)),]$cell_class = "GabaAC"
+Mouse@meta.data[WhichCells(Mouse, idents = c(18, 54)),]$cell_class = "GlyAC"
+
+
+Mouse@meta.data[WhichCells(Mouse, idents = c(64)),]$cell_class = "HC"
+
+# Photoceptors do separate into rods and cones, do a round of clustering to separate rods and cones
+Rod_markers <- c("RHO" ,"PDC", "NRL", "SAG", "GNAT1", "GNGT1")
+Cone_markers <- c("ARR3", "PDE6H", "GNAT2","GNGT2","OPN1SW","OPN1MW")
+Mouse_PR <- subset(Mouse, cells = WhichCells(Mouse, idents =  7))
+Mouse_PR <- ClusterSeurat(Mouse_PR)
+DotPlot(Mouse_PR, features = c(Rod_markers, Cone_markers)) + RotatedAxis()
+
+rod_cells <- WhichCells(Mouse_PR, idents = 2)
+cone_cells <- WhichCells(Mouse_PR, idents = c(0,1,3))
+Mouse@meta.data[rod_cells,]$cell_class = "Rod"
+Mouse@meta.data[cone_cells,]$cell_class = "Cone"
+
+
+Mouse@meta.data[WhichCells(Mouse, idents = c(22)),]$cell_class = "MG"
+
+Mouse@meta.data[WhichCells(Mouse, idents = c(0)),]$cell_class = "Other"
+
+
+DimPlot(Mouse, group.by = "cell_class")
+saveRDS(Mouse, "../Species_Objects/Mouse_initial.rds")
+
+```
+
+Investigate unmarked clusters to see if they have any unique markers
+```{r}
+# 51, 66, 62, 54
+Mouse_markers51 <- FindMarkers(Mouse, ident.1 = "51")
+Mouse_markers66 <- FindMarkers(Mouse, ident.1 = "66")
+
+saveRDS(Mouse, "../Species_Objects/Mouse_initial.rds")
+
+# 0 - debris, retain as RGC for now
+```
+
+Plot cell type by file
+```{r}
+Mouse <- readRDS("../Species_Objects/Mouse_initial.rds")
+counts <- table(Mouse@meta.data$cell_class, Mouse@meta.data$orig.file)
+counts
+counts <- t(t(counts) / colSums(counts))
+barplot(counts, legend = rownames(counts), col= c("red","orange","yellow","green","blue", "black", "white"))
+```
+
+
+
+## RGC Object
+Create separate RGC object
+```{r}
+Mouse <- readRDS("../Species_Objects/Mouse_initial.rds")
+
+# Only keep RGCs
+Idents(Mouse) <- "cell_class"
+Mouse_RGC <- subset(Mouse, cells = WhichCells(Mouse, idents ="RGC"))
+rm(Mouse)
+
+# Remove cells from samples that do not enrich for RGCs
+VlnPlot(Mouse_RGC, "nCount_RNA", group.by = "orig.file", pt.size = 0)
+Idents(Mouse_RGC) <- "orig.file"
+Mouse_RGC <- subset(Mouse_RGC, cells = setdiff(colnames(Mouse_RGC), WhichCells(Mouse_RGC, idents =c("CTRLC57AllOther1", "CTRLC57AllOther2", "ONC48hC57AllOther1", "ONC48hC57AllOther2"))))
+
+saveRDS(Mouse_RGC, file = "../Species_Objects/MouseRGC_v1.rds")
+```
+
+Batch correct Mouse RGCs and run clustering pipeline
+
+```{r}
+Mouse_RGC <- readRDS("../Species_Objects/MouseRGC_v1.rds")
+obj.list <- SplitObject(Mouse_RGC, split.by = "animal")
+for (i in 1:length(obj.list)) {
+      obj.list[[i]] <- NormalizeData(obj.list[[i]], verbose = FALSE)
+      obj.list[[i]] <- FindVariableFeatures(obj.list[[i]], selection.method = "vst", nfeatures = 2000, verbose = FALSE)
+}
+obj.anchors <- FindIntegrationAnchors(object.list = obj.list)
+obj.anchors <- readRDS("../MouseRGCanchors.rds")
+Mouse_RGC <- IntegrateData(anchorset = obj.anchors)
+DefaultAssay(Mouse_RGC) <- "integrated"
+
+Mouse_RGC <- ScaleData(Mouse_RGC, verbose = FALSE)
+Mouse_RGC <- RunPCA(Mouse_RGC, npcs = 30, verbose = FALSE)
+Mouse_RGC <- RunUMAP(Mouse_RGC, reduction = "pca", dims = 1:30)
+Mouse_RGC <- FindNeighbors(Mouse_RGC, dims = 1:30)
+Mouse_RGC <- FindClusters(Mouse_RGC, resolution = .8)
+Mouse_RGC <- RunTSNE(Mouse_RGC, dims = 1:30)
+Mouse_RGC <- RunUMAP(Mouse_RGC, dims = 1:30)
+
+saveRDS(Mouse_RGC, "~/Species_Objects/MouseRGC_integrated_v1.rds")
+```
+
+Visualize initial clusters
+```{r}
+Mouse_RGC <- readRDS("../Species_Objects/MouseRGC_integrated_v1.rds")
+DimPlot(Mouse_RGC, label = TRUE)
+DimPlot(Mouse_RGC, group.by = "orig.file", cells = sample(colnames(Mouse_RGC)))
+DimPlot(Mouse_RGC, group.by = "animal", cells = sample(colnames(Mouse_RGC)))
+VlnPlot(Mouse_RGC, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(Mouse_RGC, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+```
+
+Find DE markers
+```{r}
+MouseRGCmarkers <- FindAllMarkers(Mouse_RGC)
+saveRDS(MouseRGCmarkers, "~/MouseRGCMarkers.rds")
+```
+
+Construct a dendrogram and plot top DE genes to determine whether to merge clusters
+```{r}
+Mouse_RGC <- readRDS("../Species_Objects/MouseRGC_integrated_v1.rds")
+MouseRGCmarkers <- readRDS("../Species_Markers/MouseRGCMarkers.rds")
+Mouse_RGC <- DendroOrder(Mouse_RGC)
+top_markers <- PlotUniqueMarkers(Mouse_RGC, MouseRGCmarkers, num_markers = 1)
+
+Idents(Mouse_RGC) <- "dendro_order"
+markers <- DiagonalizeGenes(markers, Mouse_RGC)
+DotPlot(Mouse_RGC, features = top_markers[1:20], group.by = "dendro_order") + RotatedAxis()
+```
+
+Compare to RGC atlas
+```{r}
+RGCs <- readRDS("../Species_Objects/RGC_atlas.rds")
+
+# Format velocyto labels to match appropriately
+barcode <- function(string){
+  file <- Mouse_RGC@meta.data[string, "orig.file"]
+  code <- strsplit(string, c(":"))
+  barcode <- strsplit(code[[1]][2], "x")
+  name <- paste0("a", strsplit(file, "lt")[[1]][2], "_", barcode[[1]][1], "-1")
+  return(name)
+}
+new_names <- unlist(lapply(colnames(Mouse_RGC), barcode))
+Mouse_RGC@meta.data$barcode <- new_names
+common_cells <- new_names[new_names %in% names(RGCs$type)]
+velo_labels <- data.frame(velo = Mouse_RGC@meta.data$seurat_clusters, row.names = new_names)
+
+confusion_mat <- table(velo_labels[common_cells,], RGCs$type[common_cells])
+
+MakePrettyConfusionMatrix(confusion_mat)
+MakePrettyConfusionMatrix(t(confusion_mat))
+```
+
+Which cells were removed from the analysis?
+```{r}
+removed_cells <- setdiff(rownames(velo_labels), common_cells)
+# Calculate the percentage of each cluster that was removed
+table(velo_labels[removed_cells,]) / table(velo_labels[,])
+```
+
+Remove clusters
+```{r}
+# 10 - AC
+head(MouseRGCmarkers[MouseRGCmarkers$cluster==10,]$gene, 10)
+# 17 - keep for now
+head(MouseRGCmarkers[MouseRGCmarkers$cluster==17,]$gene, 20)
+# 22 - keep for now
+head(MouseRGCmarkers[MouseRGCmarkers$cluster==22,]$gene, 20)
+# 29 - AC
+head(MouseRGCmarkers[MouseRGCmarkers$cluster==29,]$gene, 20)
+#40 - keep for now
+head(MouseRGCmarkers[MouseRGCmarkers$cluster==40,]$gene, 20)
+#41 - AC
+head(MouseRGCmarkers[MouseRGCmarkers$cluster==41,]$gene, 20)
+#42 - AC
+head(MouseRGCmarkers[MouseRGCmarkers$cluster==42,]$gene, 20)
+#45  - Microglia
+head(MouseRGCmarkers[MouseRGCmarkers$cluster==45,]$gene, 20)
+#46 - AC
+head(MouseRGCmarkers[MouseRGCmarkers$cluster==46,]$gene, 20)
+#47 - AC
+head(MouseRGCmarkers[MouseRGCmarkers$cluster==47,]$gene, 20)
+#48 - keep for now
+head(MouseRGCmarkers[MouseRGCmarkers$cluster==48,]$gene, 20)
+#54 - keep for now
+head(MouseRGCmarkers[MouseRGCmarkers$cluster==54,]$gene, 20)
+#55 - low RNA counts, remove
+#58 - keep for now
+head(MouseRGCmarkers[MouseRGCmarkers$cluster==58,]$gene, 20)
+#59 - keep for now
+head(MouseRGCmarkers[MouseRGCmarkers$cluster==59,]$gene, 20)
+
+Mouse_RGC <- DropClusters(Mouse_RGC, idents = c(10, 29, 41, 42, 45, 46, 47, 55), refactor = FALSE)
+
+
+# 22, 29, 17, 58, 55 do not have tight correspondence
+
+# 47,29,48,54,17,40,10,45,41 are all very close
+# 35, 36 are close
+# 18, 49
+# 27,30,52 are similar
+
+```
+
+Merge clusters based on DE genes
+```{r}
+# 50, 40, 49,41,59,46,48,54,45 are small clusters that map specifically, but do not show in confusion matrix since other larger clusters dominate the absolute number of cells that map.
+DotPlot(Mouse_RGC, features = head(MouseRGCmarkers[MouseRGCmarkers$cluster==46,]$gene, 10)) + RotatedAxis()
+Mouse_RGC <- MergeClusters(Mouse_RGC, idents = c(0, 46), refactor = FALSE)
+
+DotPlot(Mouse_RGC, features = head(MouseRGCmarkers[MouseRGCmarkers$cluster==51,]$gene, 10)) + RotatedAxis()
+Mouse_RGC <- MergeClusters(Mouse_RGC, idents = c(1,51), refactor = FALSE)
+
+DotPlot(Mouse_RGC, features = head(MouseRGCmarkers[MouseRGCmarkers$cluster==54,]$gene, 10)) + RotatedAxis()
+Mouse_RGC <- MergeClusters(Mouse_RGC, idents = c(2, 54), refactor = FALSE)
+
+
+DotPlot(Mouse_RGC, features = head(MouseRGCmarkers[MouseRGCmarkers$cluster==50,]$gene, 10)) + RotatedAxis()
+DotPlot(Mouse_RGC, features = head(MouseRGCmarkers[MouseRGCmarkers$cluster==48,]$gene, 10)) + RotatedAxis()
+Mouse_RGC <- MergeClusters(Mouse_RGC, idents = c(3, 50, 48), refactor = FALSE)
+
+DotPlot(Mouse_RGC, features = head(MouseRGCmarkers[MouseRGCmarkers$cluster==40,]$gene, 10)) + RotatedAxis()
+Mouse_RGC <- MergeClusters(Mouse_RGC, idents = c(8, 40), refactor = FALSE)
+
+# Merge clusters 17, 48, 54
+DotPlot(Mouse_RGC, features = head(MouseRGCmarkers[MouseRGCmarkers$cluster==17,]$gene, 10)) + RotatedAxis()
+DotPlot(Mouse_RGC, features = head(MouseRGCmarkers[MouseRGCmarkers$cluster==48,]$gene, 10)) + RotatedAxis()
+DotPlot(Mouse_RGC, features = head(MouseRGCmarkers[MouseRGCmarkers$cluster==54,]$gene, 10)) + RotatedAxis()
+Mouse_RGC <- MergeClusters(Mouse_RGC, idents = c(17,48,54), refactor = FALSE)
+
+DotPlot(Mouse_RGC, features = head(MouseRGCmarkers[MouseRGCmarkers$cluster==41,]$gene, 10)) + RotatedAxis()
+Mouse_RGC <- MergeClusters(Mouse_RGC, idents = c(16,41), refactor = FALSE)
+
+DotPlot(Mouse_RGC, features = head(MouseRGCmarkers[MouseRGCmarkers$cluster==18,]$gene, 10)) + RotatedAxis()
+DotPlot(Mouse_RGC, features = head(MouseRGCmarkers[MouseRGCmarkers$cluster==49,]$gene, 10)) + RotatedAxis()
+DotPlot(Mouse_RGC, features = head(MouseRGCmarkers[MouseRGCmarkers$cluster==47,]$gene, 10)) + RotatedAxis()
+Mouse_RGC <- MergeClusters(Mouse_RGC, idents = c(18,49,47), refactor = FALSE)
+
+DotPlot(Mouse_RGC, features = head(MouseRGCmarkers[MouseRGCmarkers$cluster==59,]$gene, 10)) + RotatedAxis()
+Mouse_RGC <- MergeClusters(Mouse_RGC, idents = c(19,59), refactor = FALSE)
+
+
+DotPlot(Mouse_RGC, features = head(MouseRGCmarkers[MouseRGCmarkers$cluster==58,]$gene, 10)) + RotatedAxis()
+DotPlot(Mouse_RGC, features = head(MouseRGCmarkers[MouseRGCmarkers$cluster==20,]$gene, 10)) + RotatedAxis()
+
+# Remaining clusters: 22
+
+```
+
+
+
+
+Create a supervised model for Mouse RGCs
+```{r}
+RGC_obj <- CreateSeuratObject(counts = RGCs$counts)
+RGC_obj <- NormalizeData(RGC_obj)
+RGC_obj <- FindVariableFeatures(RGC_obj)
+RGC_obj <- ScaleData(RGC_obj)
+RGC_obj@meta.data$cluster <- RGCs$type
+RGC_obj@meta.data$batch <- RGCs$batch
+Idents(RGC_obj) <- "cluster"
+RGC_obj <- UpperCase_genes(RGC_obj)
+saveRDS(RGC_obj, file = "../Species_Objects")
+
+# Create a trained classifier based on shared highly variable features
+common_genes <- rownames(RGC_obj)[rownames(RGC_obj) %in% rownames(Mouse_RGC)]
+RGC_model <- TrainModel(RGC_obj, training_genes = common_genes)
+saveRDS(RGC_model, "../Species_Models/Mouse_RGC.rds")
+
+
+confusion_mat <- BuildConfusionMatrix(train = RGC_obj, test = Mouse_RGC, model = RGC_model)
+MakePrettyConfusionMatrix(confusion_mat)
+```
+
+Remove cells with low / high RNA count, low resolution parameter slightly
+```{r}
+VlnPlot(Mouse_RGC, features = "nCount_RNA", group.by = "animal", pt.size = 0)
+VlnPlot(Mouse_RGC, features = "nFeature_RNA", group.by = "animal", pt.size = 0)
+
+
+MouseRGC_reduced <- subset(Mouse_RGC, subset = nCount_RNA < 40000 & nFeature_RNA >2000)
+
+MouseRGC_reduced <- ScaleData(MouseRGC_reduced, verbose = FALSE)
+MouseRGC_reduced <- FindNeighbors(MouseRGC_reduced, dims = 1:30)
+MouseRGC_reduced <- FindClusters(MouseRGC_reduced, resolution = .5)
+# MouseRGC_reduced <- RunTSNE(MouseRGC_reduced, dims = 1:30)
+MouseRGC_reduced <- RunUMAP(MouseRGC_reduced, dims = 1:30)
+
+DimPlot(MouseRGC_reduced, label = TRUE)
+```
+
+
+
+## Bipolar Object
+
+Create separate Mouse BC object
+```{r}
+Mouse <- readRDS("../Species_Objects/Mouse_initial.rds")
+
+# Only keep BCs
+Idents(Mouse) <- "cell_class"
+MouseBC <- subset(Mouse, cells = WhichCells(Mouse, idents ="BC"))
+rm(Mouse)
+
+# Remove cells from samples that do not enrich for RGCs
+VlnPlot(MouseBC, "nFeature_RNA", group.by = "orig.file", pt.size = 0)
+Idents(MouseBC) <- "orig.file"
+MouseBC <- subset(MouseBC, cells = setdiff(colnames(MouseBC), WhichCells(MouseBC, idents =c("adultRGC1","adultRGC2","adultRGC7"))))
+
+saveRDS(MouseBC, file = "../Species_Objects/MouseBC_integrated_v1.rds")
+```
+
+Batch correct Mouse BCs and run clustering pipeline
+```{r}
+# MouseBC <- readRDS("../Species_Objects/MouseBC_integrated_v1.rds")
+obj.list <- SplitObject(MouseBC, split.by = "animal")
+for (i in 1:length(obj.list)) {
+      obj.list[[i]] <- NormalizeData(obj.list[[i]], verbose = FALSE)
+      obj.list[[i]] <- FindVariableFeatures(obj.list[[i]], selection.method = "vst", nfeatures = 2000, verbose = FALSE)
+}
+obj.anchors <- FindIntegrationAnchors(object.list = obj.list)
+MouseBC <- IntegrateData(anchorset = obj.anchors)
+DefaultAssay(MouseBC) <- "integrated"
+
+MouseBC <- ScaleData(MouseBC, verbose = FALSE)
+MouseBC <- FindNeighbors(MouseBC, dims = 1:30)
+MouseBC <- FindClusters(MouseBC, resolution = .5)
+# MouseBC <- RunTSNE(MouseBC, dims = 1:30)
+MouseBC <- RunUMAP(MouseBC, dims = 1:30)
+
+saveRDS(MouseBC, "~/Species_Objects/MouseBC_integrated_v1.rds")
+```
+
+Visualize initial clusters
+```{r}
+#MouseBC <- readRDS("~/Species_Objects/MouseBC_integrated_v1.rds")
+DimPlot(MouseBC, label = TRUE)
+DimPlot(MouseBC, group.by = "orig.file", cells = sample(colnames(MouseBC)))
+DimPlot(MouseBC, group.by = "animal", cells = sample(colnames(MouseBC)))
+VlnPlot(MouseBC, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(MouseBC, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+```
+
+Find DE markers
+```{r}
+MouseBCmarkers <- FindAllMarkers(MouseBC)
+saveRDS(MouseBCmarkers, "~/Species_Markers/MouseBCMarkers.rds")
+```
+
+Load BC object and compare
+```{r}
+load("../Species_Reference//MouseBC_superdata_190622_typed.Rdata")
+# Create Seurat object of DropSeq data to compare to
+DropseqBC <- SeuratObject::CreateSeuratObject(counts = BC_count_list$Vsx2Drop$counts)
+DropseqBC <- NormalizeData(DropseqBC)
+DropseqBC <- FindVariableFeatures(DropseqBC)
+DropseqBC <- ScaleData(DropseqBC)
+DropseqBC@meta.data$cluster <- BC_count_list$Vsx2Drop$type
+Idents(DropseqBC) <- "cluster"
+DropseqBC <- UpperCase_genes(DropseqBC)
+
+# Create a trained classifier based on shared highly variable features
+common_genes <- rownames(DropseqBC)[rownames(DropseqBC) %in% rownames(MouseBC)]
+BC_model <- TrainModel(DropseqBC, training_genes = common_genes)
+confusion_mat <- BuildConfusionMatrix(train = DropseqBC, test = MouseBC, model = BC_model)
+MakePrettyConfusionMatrix(confusion_mat)
+```
+
+# Bipolar: remove low quality cells and set final clusters
+Repeat, but remove cells with very low and very high RNA counts and recluster with lower resolution parameter since there were multiple spurious cluster splits.
+```{r}
+VlnPlot(MouseBC, features = "nCount_RNA", group.by = "animal")
+
+MouseBC_reduced <- subset(MouseBC, subset = nCount_RNA > 1000 & nFeature_RNA < 10000)
+
+MouseBC_reduced <- ScaleData(MouseBC_reduced, verbose = FALSE)
+MouseBC_reduced <- FindNeighbors(MouseBC_reduced, dims = 1:30)
+MouseBC_reduced <- FindClusters(MouseBC_reduced, resolution = .5)
+# MouseBC_reduced <- RunTSNE(MouseBC_reduced, dims = 1:30)
+MouseBC_reduced <- RunUMAP(MouseBC_reduced, dims = 1:30)
+
+DimPlot(MouseBC_reduced, label = TRUE)
+```
+
+Compare reduced BC object to DropSeq
+```{r}
+load("~/Species_Objects/MouseBC_superdata_190622_typed.Rdata")
+# Create Seurat object of DropSeq data to compare to
+DropseqBC <- CreateSeuratObject(counts = BC_count_list$Vsx2Drop$counts)
+DropseqBC <- NormalizeData(DropseqBC)
+DropseqBC <- FindVariableFeatures(DropseqBC)
+DropseqBC <- ScaleData(DropseqBC)
+DropseqBC@meta.data$cluster <- BC_count_list$Vsx2Drop$type
+Idents(DropseqBC) <- "cluster"
+DropseqBC <- UpperCase_genes(DropseqBC)
+saveRDS(DropseqBC, file = "../Species_Objects/Dropseq_MouseBC.rds")
+
+# Create a trained classifier based on shared highly variable features
+common_genes <- rownames(DropseqBC)[rownames(DropseqBC) %in% rownames(MouseBC_reduced)]
+BC_model <- TrainModel(DropseqBC, training_genes = common_genes)
+saveRDS(BC_model, "~/Species_Models/Mouse_DropseqBC.rds")
+
+# Build confusion matrix
+BC_model <- readRDS("~/Species_Models/Mouse_DropseqBC.rds")
+confusion_mat <- BuildConfusionMatrix(train = DropseqBC, test = MouseBC_reduced, model = BC_model)
+MakePrettyConfusionMatrix(confusion_mat)
+```
+
+Combine clusters 0, 2, and 17 due to similar expression profiles
+```{r}
+MouseBC_reduced <- MergeClusters(MouseBC_reduced, idents = c(0,2,17))
+Idents(MouseBC_reduced) <- "seurat_clusters"
+DimPlot(MouseBC_reduced, label = TRUE)
+
+BC_model <- readRDS("~/Species_Models/Mouse_DropseqBC.rds")
+confusion_mat <- BuildConfusionMatrix(train = DropseqBC, test = MouseBC_reduced, model = BC_model)
+MakePrettyConfusionMatrix(confusion_mat)
+
+saveRDS(MouseBC_reduced, "../Species_Objects/MouseBC_integrated_v2.rds")
+MouseBC_reduced <- readRDS("../Species_Objects/MouseBC_integrated_v2.rds")
+```
+
+Investigate clusters 15 and 6
+```{r}
+markers15 <- FindMarkers(MouseBC_reduced, ident.1 = "15")
+markers6 <- FindMarkers(MouseBC_reduced, ident.1 = "6")
+DotPlot(MouseBC_reduced, features = c("GAD1","GAD2", "SLC6A9"), assay = "RNA")
+
+# Both clusters are amacrine cells, so remove them from the object
+MouseBC_reduced <- DropClusters(MouseBC_reduced, idents = c(6,15))
+DimPlot(MouseBC_reduced, label = TRUE)
+
+BC_model <- readRDS("~/Species_Models/Mouse_DropseqBC.rds")
+confusion_mat <- BuildConfusionMatrix(train = DropseqBC, test = MouseBC_reduced, model = BC_model)
+MakePrettyConfusionMatrix(confusion_mat)
+
+saveRDS(MouseBC_reduced, "../Species_Objects/MouseBC_integrated_v2.rds")
+MouseBC_reduced <- readRDS("../Species_Objects/MouseBC_integrated_v2.rds")
+```
+
+```{r}
+MouseBC_reduced <- readRDS("../Species_Objects/MouseBC_integrated_v2.rds")
+```
+
+
+
+
+## Set annotated clusters
+
+### RGCs
+```{r}
+Mouse_RGC <- readRDS("../Species_Objects/MouseRGC_integrated_v1.rds")
+RGC_atlas <- readRDS("../Species_Reference/RGC_atlas.rds")
+
+meta <- RGC_atlas$type
+
+# Format velocyto labels to match appropriately
+barcode <- function(string){
+  file <- Mouse_RGC@meta.data[string, "orig.file"]
+  code <- strsplit(string, c(":"))
+  barcode <- strsplit(code[[1]][2], "x")
+  name <- paste0("a", strsplit(file, "lt")[[1]][2], "_", barcode[[1]][1], "-1")
+  return(name)
+}
+new_names <- unlist(lapply(colnames(Mouse_RGC), barcode))
+Mouse_RGC@meta.data$barcode <- new_names
+Mouse_RGC@meta.data$annotated <- meta[Mouse_RGC@meta.data$barcode]
+
+# Remove cells not present in the atlas
+Mouse_RGC@meta.data$keep <- !is.na(Mouse_RGC@meta.data$annotated)
+Idents(Mouse_RGC) <- "keep"
+Mouse_RGC <- subset(Mouse_RGC, idents = TRUE)
+Mouse_RGC@meta.data$keep <- NULL
+Mouse_RGC@meta.data$cell_class <- NULL
+
+saveRDS(Mouse_RGC, "../Species_Objects/MouseRGC_integrated_v2.rds")
+```
+
+Convert UMAP and diagonal gene plots to files
+```{r}
+Mouse_RGC <- readRDS("../Species_Objects/MouseRGC_integrated_v2.rds")
+
+Idents(Mouse_RGC) <- "annotated"
+
+pdf("../Figures/Species_UMAPs/MouseRGC.pdf", w=4, h=4, useDingbats = FALSE)
+DimPlot(Mouse_RGC, label = TRUE) + NoLegend()
+dev.off()
+
+markers <- PlotUniqueMarkers(Chicken_RGC, RGC_markers, edits = TRUE)
+pdf("Figures/Species_MarkerPlots/ChickenRGC.pdf", , w=6, h=4, useDingbats = FALSE)
+
+dev.off()
+```
+
+### BCs
+```{r}
+Mouse_BC <- readRDS("../Species_Objects/MouseBC_integrated_v2.rds")
+load("../Species_Reference/MouseBC_superdata_190622_typed.Rdata")
+
+meta <- BC_count_list$oncBC$type
+
+# Format velocyto labels to match appropriately
+barcode <- function(string){
+  file <- Mouse_BC@meta.data[string, "orig.file"]
+  code <- strsplit(string, c(":"))
+  barcode <- strsplit(code[[1]][2], "x")
+  
+  if(substring(file, 1,1)=="C"){
+    file_num <- substring(file, nchar(file), nchar(file))
+    name <- paste0("oncBC_CtC57AllOtherR", file_num, "_", barcode[[1]][1], "-1")
+  }
+  else{
+    file_num <- substring(file, nchar(file), nchar(file))
+    name <- paste0("CrC572dAllOtherR", file, "_", barcode[[1]][1], "-1")
+  }
+  return(name)
+}
+new_names <- unlist(lapply(colnames(Mouse_BC), barcode))
+Mouse_BC@meta.data$barcode <- new_names
+Mouse_BC@meta.data$annotated <- meta[Mouse_BC@meta.data$barcode]
+
+# Remove cells not present in the atlas
+Mouse_BC@meta.data$keep <- !is.na(Mouse_BC@meta.data$annotated)
+Idents(Mouse_BC) <- "keep"
+Mouse_BC <- subset(Mouse_BC, idents = TRUE)
+Mouse_BC@meta.data$keep <- NULL
+Mouse_BC@meta.data$cell_class <- NULL
+
+# Remove cells that are not bipolar cells
+Idents(Mouse_BC) <- "annotated"
+Mouse_BC <- subset(Mouse_BC, cells = setdiff(colnames(Mouse_BC), WhichCells(Mouse_BC, idents = c("GabaAC","GlyAC","Rods", "MG"))))
+
+
+Mouse_BC <- RunUMAP(Mouse_BC, dims = 1:20)
+Idents(Mouse_BC) <- "annotated"
+
+saveRDS(Mouse_BC, "../Species_Objects/MouseBC_int_ann_v3.rds")
+```
+
+Convert UMAP and diagonal gene plots to files
+```{r}
+Mouse_BC <- readRDS("./Species_Objects/MouseBC_int_ann_v3.rds")
+
+pdf("../Figures/Species_UMAPs/MouseBC.pdf", w=4, h=4, useDingbats = FALSE)
+DimPlot(Mouse_BC, label = TRUE) + NoLegend()
+dev.off()
+
+markers <- PlotUniqueMarkers(Chicken_RGC, RGC_markers, edits = TRUE)
+pdf("Figures/Species_MarkerPlots/ChickenRGC.pdf", , w=6, h=4, useDingbats = FALSE)
+
+dev.off()
+```
+
+
+## Rods
+```{r}
+Mouse <- readRDS("../Species_Objects/Mouse_initial.rds")
+Idents(Mouse) <- "dendro_order"
+
+Rod_markers <- c("RHO" ,"PDC", "NRL", "SAG", "GNAT1", "GNGT1")
+Cone_markers <- c("ARR3", "PDE6H", "GNAT2","GNGT2","OPN1SW","OPN1MW")
+DotPlot(Mouse, features = c(Rod_markers, Cone_markers), group.by = "dendro_order") + RotatedAxis()
+
+# Rods and cones cannot be separated with all other cells, separate to photoreceptors and recluster
+Mouse_PR <- subset(Mouse, cells = WhichCells(Mouse, idents =  7))
+Mouse_PR <- ClusterSeurat(Mouse_PR)
+
+# Subset to rods, do preliminary clustering, and save
+DotPlot(Mouse_PR, features = c(Rod_markers, Cone_markers)) + RotatedAxis()
+
+Mouse_Rods <- subset(Mouse_PR, idents = 2)
+Mouse_Rods <- ClusterSeurat(Mouse_Rods)
+saveRDS(Mouse_Rods, file = "../Species_Objects/MouseRods_v1.rds")
+```
+
+
+## DE Genes
+### RGC
+```{r}
+Mouse_RGC <- readRDS("../Species_Objects/MouseRGC_integrated_v2.rds")
+de_rgc <- FindAllMarkers(Mouse_RGC, assay = "RNA", only.pos = TRUE)
+saveRDS(de_rgc, "../Species_Markers/MouseRGC_markers.rds")
+
+pct_exp = ExpressionByCluster(Mouse_RGC, de_rgc$gene)
+write.csv(de_rgc, "../Species_Markers/ForKS/MouseRGC_all_de.csv")
+write.csv(pct_exp, "../Species_Markers/ForKS/MouseRGC_all_pctexp.csv")
+```
+
+```{r}
+de_rgc <- readRDS("../Species_Markers/MouseRGC_markers.rds")
+de_rgc = de_rgc[de_rgc$pct.2 < .2,]
+pct_exp = ExpressionByCluster(Mouse_RGC, de_rgc$gene)
+write.csv(de_rgc, "../Species_Markers/ForKS/MouseRGC_otherlow_de.csv")
+write.csv(pct_exp, "../Species_Markers/ForKS/MouseRGC_otherlow_pctexp.csv")
+
+```
+
+```{r}
+de_rgc <- readRDS("../Species_Markers/MouseRGC_markers.rds")
+de_rgc = de_rgc[(de_rgc$pct.1 > .4 & de_rgc$avg_log2FC > .4),]
+pct_exp = ExpressionByCluster(Mouse_RGC, de_rgc$gene)
+write.csv(de_rgc, "../Species_Markers/ForKS/MouseRGC_highexp_de.csv")
+write.csv(pct_exp, "../Species_Markers/ForKS/MouseRGC_highexp_pctexp.csv")
+```
+
+```{r}
+de_rgc <- readRDS("../Species_Markers/MouseRGC_markers.rds")
+pct_exp = ExpressionByCluster(Mouse_RGC, de_rgc$gene)
+
+pct_exp <- as.data.frame(pct_exp)
+rownames(pct_exp) <- rownames(de_rgc)
+
+
+# Calculate number of clusters that express over a certain threshold and subset accordingly
+threshold = .05
+num_clusters = 10
+pct_exp$num = rowSums(pct_exp > threshold)
+pct_exp <- pct_exp[pct_exp$num < (num_clusters+1) , ]
+de_rgc <- de_rgc[rownames(pct_exp),]
+
+# See how many genes are in each cluster
+table(de_rgc$cluster)
+sum(table(de_rgc$cluster) == 0)
+
+# Save
+write.csv(de_rgc, "../Species_Markers/ForKS/MouseRGC_selective_de.csv")
+write.csv(pct_exp, "../Species_Markers/ForKS/MouseRGC_selective_pctexp.csv")
+
+```
+
+
+# Scratch
+```{r}
+Mouse_RGC <- readRDS("../Species_Objects/MouseRGC_integrated_v2.rds")
+DefaultAssay(Mouse_RGC) <- "RNA"
+cdh <- grep("^CDH", rownames(Mouse_RGC), value = TRUE, ignore.case = TRUE)
+```
+
+```{r}
+Mouse_RGC <- readRDS("../Species_Objects/MouseRGC_integrated_v2.rds")
+library(SeuratData)
+library(SeuratDisk)
+DefaultAssay(Mouse_RGC) <- "RNA"
+
+SaveH5Seurat(Mouse_RGC, filename = "/Users/joshhahn/Google Drive/My Drive/Shekhar Lab/Projects/Evolution of Cell Types/Analysis/Species_Objects/Python/MouseRGC_integrated_v2.h5Seurat")
+Convert("/Users/joshhahn/Google Drive/My Drive/Shekhar Lab/Projects/Evolution of Cell Types/Analysis/Species_Objects/Python/MouseRGC_integrated_v2.h5Seurat", dest = "h5ad")
+```
+
+C10 subdivision
+```{r}
+Mouse_RGC <- readRDS("../Species_Objects/MouseRGC_integrated_v2.rds")
+c10_cells <- WhichCells(Mouse_RGC, idents = "C10")
+
+C10 <- Mouse_RGC@assays$RNA@counts[, c10_cells]
+C10 <- CreateSeuratObject(C10, names.delim = ":")
+C10 <- ClusterSeurat(C10, integrate.by = "orig.ident")
+
+object <- C10
+
+obj.list <- SplitObject(object, split.by = "orig.ident")
+for (i in 1:length(obj.list)) {
+      obj.list[[i]] <- NormalizeData(obj.list[[i]], verbose = FALSE)
+      obj.list[[i]] <- FindVariableFeatures(obj.list[[i]], selection.method = "vst", nfeatures = 2000, verbose = FALSE)
+    }
+obj.anchors <- FindIntegrationAnchors(object.list = obj.list)
+object <- IntegrateData(anchorset = obj.anchors, k.weight = 80)
+
+DefaultAssay(object) <- "integrated"
+object <- ScaleData(object)
+
+object <- RunPCA(object)
+numPCs <- 10
+
+object <- FindNeighbors(object, dims = 1:numPCs)
+object <- FindClusters(object, resolution = .4)
+object <- RunUMAP(object, dims = 1:numPCs)
+
+Idents(object) = "integrated_snn_res.1"
+sub_markers <- FindAllMarkers(object)
+object <- DendroOrder(object)
+DotPlot(object, features = unique(TopMarkers(sub_markers, num_markers = 3))) + RotatedAxis()
+
+Idents(object) <- "integrated_snn_res.0.4"
+object <- MergeClusters(object, idents = c(0,5), refactor = TRUE)
+DimPlot(object)
+
+sub_markers <- FindAllMarkers(object)
+sub_markers <- sub_markers[order(sub_markers$p_val),]
+markers <- unique(TopMarkers(sub_markers, num_markers = 7))
+DotPlot(object, features = unique(TopMarkers(sub_markers, num_markers = 7)), scale.min = 50) + RotatedAxis()
+
+Mouse <- readRDS("../Species_Initial/Mouse_initial.rds")
+
+sub_obj <- DropClusters(object, idents = 5)
+sub_obj_markers <- FindAllMarkers(sub_obj)
+DotPlot(sub_obj, features = unique(TopMarkers(sub_obj_markers, num_markers = 7)), scale.min = 0) + RotatedAxis()
+
+markers4 <- subset(sub_obj_markers, cluster == 4)
+
+
+```
+
+
+
