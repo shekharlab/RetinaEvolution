@@ -1,5 +1,5 @@
 # Summary
-This repository contains code written to analyze single cell RNA sequencing data for 17 vertebrate species associated with the paper [Hahn, Monavarfeshani, et al. "Evolution of neuronal cell classes and types in the vertebrate retina"]. The analysis heavily relies on the R package [Seurat](https://github.com/satijalab/seurat) and may be useful to users who wish to reproduce the results of the paper or try alternative analysis strategies. All objects used for this analysis are available as rds files [here](https://drive.google.com/drive/folders/1Vnkxa-ZJyDXiaN8cauMqPWjTe9sQEyld?usp=share_link). 
+This repository contains code written to analyze single cell RNA sequencing data for 17 vertebrate species associated with the paper //include citation here//. The analysis heavily relies on the R package [Seurat](https://github.com/satijalab/seurat) and may be useful to users who wish to reproduce the results of the paper or try alternative analysis strategies. All objects used for this analysis are available as rds files [here](https://drive.google.com/drive/folders/1Vnkxa-ZJyDXiaN8cauMqPWjTe9sQEyld?usp=share_link). 
 
 If you use data or code made available here in your work, please consider citing,
 
