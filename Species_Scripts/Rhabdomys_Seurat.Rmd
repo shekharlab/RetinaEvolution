@@ -1,0 +1,493 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+## Preprocessing 
+
+Load libraries
+```{r}
+library(reshape2)
+library(Seurat)
+library(SeuratDisk)
+library(ggplot2)
+source("../utils/utilFxns.R")
+source("../utils/plottingFxns.R")
+```
+
+Set data directory and load loom files
+```{r}
+data_dir <- "/Users/joshhahn/Google Drive/My Drive/shekharlab_data/projects/Rhabdomys/"
+
+Convert(paste0(data_dir, "RhabAllnoStb2/velo_outs/full.h5ad"), dest = "h5seurat")
+All_nSt <- LoadH5Seurat(paste0(data_dir, "RhabAllnoStb2/velo_outs/full.h5seurat"))
+
+Convert(paste0(data_dir, "RhabAllnoStnoSob2/velo_outs/full.h5ad"), dest = "h5seurat")
+All_nStSo <- LoadH5Seurat(paste0(data_dir, "RhabAllnoStnoSob2/velo_outs/full.h5seurat"))
+
+Convert(paste0(data_dir, "RhabNeunNeg1b2/velo_outs/full.h5ad"), dest = "h5seurat")
+NN1b2 <- LoadH5Seurat(paste0(data_dir, "RhabNeunNeg1b2/velo_outs/full.h5seurat"))
+
+Convert(paste0(data_dir, "RhabNeunNegb1/velo_outs/full.h5ad"), dest = "h5seurat")
+NNb1 <- LoadH5Seurat(paste0(data_dir, "RhabNeunNegb1/velo_outs/full.h5seurat"))
+
+Convert(paste0(data_dir, "RhabNeunPos1b1/velo_outs/full.h5ad"), dest = "h5seurat")
+NP1b1 <- LoadH5Seurat(paste0(data_dir, "RhabNeunPos1b1/velo_outs/full.h5seurat"))
+
+Convert(paste0(data_dir, "RhabNeunPos1b2/velo_outs/full.h5ad"), dest = "h5seurat")
+NP1b2 <- LoadH5Seurat(paste0(data_dir, "RhabNeunPos1b2/velo_outs/full.h5seurat"))
+
+Convert(paste0(data_dir, "RhabNeunPos2b1/velo_outs/full.h5ad"), dest = "h5seurat")
+NP2b1 <- LoadH5Seurat(paste0(data_dir, "RhabNeunPos2b1/velo_outs/full.h5seurat"))
+```
+
+Combine matrices and create new Seurat object. 
+```{r}
+Rhabdomys_mat <- cbind(All_nSt@assays$matrix@counts, All_nStSo@assays$matrix@counts, NN1b2@assays$matrix@counts, NNb1@assays$matrix@counts, NP1b1@assays$matrix@counts, NP1b2@assays$matrix@counts, NP2b1@assays$matrix@counts)
+
+rownames(Rhabdomys_mat) <- toupper(rownames(Rhabdomys_mat))
+
+Rhabdomys <- CreateSeuratObject(Rhabdomys_mat, names.delim = ":")
+
+Rhabdomys@meta.data[colnames(All_nSt), 'orig.file'] = "RhabAllnoStb2"
+Rhabdomys@meta.data[colnames(All_nStSo), 'orig.file'] = "RhabAllnoStnoSob2"
+Rhabdomys@meta.data[colnames(NN1b2), 'orig.file'] = "RhabNeunNeg1b2"
+Rhabdomys@meta.data[colnames(NNb1), 'orig.file'] = "RhabNeunNegb1"
+Rhabdomys@meta.data[colnames(NP1b1), 'orig.file'] = "RhabNeunPos1b1"
+Rhabdomys@meta.data[colnames(NP1b2), 'orig.file'] = "RhabNeunPos1b2"
+Rhabdomys@meta.data[colnames(NP2b1), 'orig.file'] = "RhabNeunPos2b1"
+
+```
+
+
+```{r}
+VlnPlot(Rhabdomys, features = "nCount_RNA", pt.size = 0, group.by = "orig.file", y.max = 25000)
+VlnPlot(Rhabdomys, features = "nFeature_RNA", pt.size = 0, group.by = "orig.file")
+```
+
+```{r}
+saveRDS(Rhabdomys, file = "../Species_Initial/Rhabdomys_initial.rds")
+```
+
+## Cell class annotation
+
+```{r}
+Rhabdomys <- ClusterSeurat(Rhabdomys, numPCs = 20)
+saveRDS(Rhabdomys, file = "../Species_Initial/Rhabdomys_initial.rds")
+```
+
+
+Visualize initial clusters
+```{r}
+DimPlot(Rhabdomys, label = TRUE)
+DimPlot(Rhabdomys, group.by = "orig.file")
+VlnPlot(Rhabdomys, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(Rhabdomys, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+```
+
+
+Look for major retinal cell classes
+```{r}
+# Rhabdomys <- DendroOrder(Rhabdomys)
+
+RGC_markers= c("RBPMS","RBPMS2", "SLC17A6", "POU6F2", "THY1", "NEFL", "NEFM", "SNCG")
+BC_markers= c("VSX2", "OTX2", "TRPM1", "CABP5", "GRIK1", "PRKCA", "GRM6")
+AC_markers= c("TFAP2A" ,"TFAP2B", "TFAP2C", "GAD1","GAD2", "SLC6A9", "C1QL1", "C1QL2")
+HC_markers= c("ONECUT1", "ONECUT2","ONECUT3", "LHX1", "CALB1", "TPM3")
+Cone_markers= c("PDE6H", "CRX", "ARR3")
+Rod_markers= c("SAG", "PDC", "RHO")
+MG_markers= c("SLC1A3","RLBP1", "APOE")
+Other_markers= c("S100B", "GFAP", "C1QA", "C1QB", "CLDN5", "IGFBP7")
+
+DotPlot(Rhabdomys, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Cone_markers, Rod_markers, MG_markers, Other_markers), group.by = "dendro_order") + RotatedAxis()
+```
+
+```{r}
+plot(Rhabdomys@tools$BuildClusterTree)
+```
+
+Annotate clusters using DE genes and Dot plot of marker genes
+
+```{r}
+Rhabdomys@meta.data$cell_class = "Nope"
+Rhabdomys@meta.data[WhichCells(Rhabdomys, idents =c(7,10,0,2,4,5)),]$cell_class = "RGC"
+Rhabdomys@meta.data[WhichCells(Rhabdomys, idents = c(9,19,27,29,8,23,25,32,11,15)),]$cell_class = "BP"
+Rhabdomys@meta.data[WhichCells(Rhabdomys, idents = c(12)),]$cell_class = "HC"
+Rhabdomys@meta.data[WhichCells(Rhabdomys, idents = c(24,30,16,26,34)),]$cell_class = "MG"
+Rhabdomys@meta.data[WhichCells(Rhabdomys, idents = c(31,17)),]$cell_class = "GlyAC"
+Rhabdomys@meta.data[WhichCells(Rhabdomys, idents = c(21,20,13,6)),]$cell_class = "GabaAC"
+Rhabdomys@meta.data[WhichCells(Rhabdomys, idents = c(3)),]$cell_class = "Rod"
+Rhabdomys@meta.data[WhichCells(Rhabdomys, idents = c(1,28,33)),]$cell_class = "Cone" 
+Rhabdomys@meta.data[WhichCells(Rhabdomys, idents = c(22,14,18)),]$cell_class = "Other"
+
+```
+
+
+Investigate unmarked clusters to see if they have any unique markers
+```{r}
+Mouse <- readRDS("../Species_Initial/Mouse_initial.rds")
+
+ortho3[grep("Tfap", ortho3$Gene.name), c("Rhabdomys.gene.name", "Rhabdomys.gene.stable.ID")]
+
+
+# 
+ident = c(26,31)
+mark <- FindMarkers(Rhabdomys, ident.1 = ident, max.cells.per.ident = 1000)
+ortho3[ortho3$Rhabdomys.gene.stable.ID %in% head(rownames(mark),10), "Gene.name"]
+
+```
+
+```{r}
+DimPlot(Rhabdomys, group.by = "cell_class")
+DotPlot(Rhabdomys, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Cone_markers, Rod_markers, MG_markers, Other_markers), group.by = "cell_class") + RotatedAxis()
+counts <- table(Rhabdomys@meta.data$cell_class, Rhabdomys@meta.data$orig.file)
+counts
+```
+
+```{r}
+saveRDS(Rhabdomys, "../Species_Initial/Rhabdomys_initial.rds")
+saveRDS(Rhabdomys@meta.data, "../Metadata/Rhabdomys_metadata.rds")
+```
+
+
+
+
+## RGC clustering analysis
+Create separate RGC object
+```{r}
+Rhabdomys <- readRDS("../Species_Initial/Rhabdomys_initial.rds")
+
+# Only keep RGCs
+Idents(Rhabdomys) <- "cell_class"
+Rhabdomys_RGC <- subset(Rhabdomys, cells = WhichCells(Rhabdomys, idents ="RGC"))
+
+# Remove cells with low and high counts or features
+VlnPlot(Rhabdomys_RGC, "nCount_RNA", group.by = "orig.file", pt.size = .1)
+VlnPlot(Rhabdomys_RGC, "nFeature_RNA", group.by = "orig.file", pt.size = .1)
+
+```
+
+
+```{r}
+# Only keep samples enriched for RGCs
+Rhabdomys_RGC <- subset(Rhabdomys_RGC, (orig.file ==  "RhabNeunPos1b1") | (orig.file ==  "RhabNeunPos1b2") | (orig.file ==  "RhabNeunPos2b1"))
+
+# Remove cells with too high counts
+Rhabdomys_RGC <- subset(Rhabdomys_RGC, subset = nCount_RNA < 15000)
+
+VlnPlot(Rhabdomys_RGC, "nCount_RNA", group.by = "orig.file", pt.size = .1)
+VlnPlot(Rhabdomys_RGC, "nFeature_RNA", group.by = "orig.file", pt.size = .1)
+
+saveRDS(Rhabdomys_RGC, file = "../Species_Objects/RhabdomysRGC_v1.rds")
+```
+
+### Run clustering pipeline
+
+```{r}
+Rhabdomys_RGC <- ClusterSeurat(Rhabdomys_RGC, integrate.by = "orig.file", numPCs = 20)
+saveRDS(Rhabdomys_RGC, file = "../Species_Objects/RhabdomysRGC_int_v1.rds")
+```
+
+### Visualize initial clusters
+```{r}
+DimPlot(Rhabdomys_RGC, label = TRUE)
+DimPlot(Rhabdomys_RGC, group.by = "orig.file", cells = sample(colnames(Rhabdomys_RGC)))
+VlnPlot(Rhabdomys_RGC, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(Rhabdomys_RGC, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+```
+
+### Refine Clusters
+Examine markers for suspicious clusters. 
+```{r}
+DotPlot(Rhabdomys_RGC, features = RGC_markers, assay = "RNA") + RotatedAxis()
+
+DotPlot(Rhabdomys_RGC, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Cone_markers, Rod_markers, MG_markers, Other_markers), assay = "RNA") + RotatedAxis()
+```
+
+
+Try different resolution parameters
+```{r}
+DefaultAssay(Rhabdomys_RGC) <- "integrated"
+Rhabdomys_RGC <- FindClusters(Rhabdomys_RGC, resolution = 1.4)
+
+DimPlot(Rhabdomys_RGC, label = TRUE, group.by = "integrated_snn_res.0.5")
+DimPlot(Rhabdomys_RGC, label = TRUE, group.by = "integrated_snn_res.0.8")
+DimPlot(Rhabdomys_RGC, label = TRUE, group.by = "integrated_snn_res.1.1")
+DimPlot(Rhabdomys_RGC, label = TRUE, group.by = "integrated_snn_res.1.4")
+```
+
+Start with 1.1, as it seems to find the most clusters without many likely spurious splits
+```{r}
+DefaultAssay(Rhabdomys_RGC) <- "RNA"
+Idents(Rhabdomys_RGC) <- "integrated_snn_res.1.1"
+Rhabdomys_RGC@meta.data$seurat_clusters <- Idents(Rhabdomys_RGC)
+Rhabdomys_RGC <- DendroOrder(Rhabdomys_RGC)
+```
+
+Merge any clusters
+```{r}
+Idents(Rhabdomys_RGC) <- "dendro_order"
+Rhab_RGC_markers <- FindAllMarkers(Rhabdomys_RGC, assay = "RNA", max.cells.per.ident = 1000,only.pos = TRUE)
+```
+
+```{r}
+DotPlot(Rhabdomys_RGC, assay = "RNA", features = TopMarkers(Rhab_RGC_markers, 2)) + RotatedAxis()
+```
+
+
+```{r}
+# Drop 34 due to low features
+Rhabdomys_RGC <- DropClusters(Rhabdomys_RGC, idents = c(34), refactor = FALSE)
+
+# Merge 1, 3, 19
+Rhabdomys_RGC <- MergeClusters(Rhabdomys_RGC, idents = c(1,3,19), refactor = TRUE)
+
+ident.1 = 15
+ident.2 = 22
+mark_dif <- FindMarkers(Rhabdomys_RGC, ident.1 = ident.1, ident.2 = ident.2)
+mark_dif$pct.dif <- mark_dif$pct.1 - mark_dif$pct.2
+mark_dif <- mark_dif[order(mark_dif$avg_log2FC),]
+mark_dif <- mark_dif[order(mark_dif$pct.dif),]
+
+
+
+DotPlot(Rhabdomys_RGC, idents = c(ident.1, ident.2), features = c(head(rownames(mark_dif)), tail(rownames(mark_dif)))) + RotatedAxis()
+
+mark.1 <- subset(Rhab_RGC_markers, cluster == ident.1)
+mark.2 <- subset(Rhab_RGC_markers, cluster == ident.2)
+DotPlot(Rhabdomys_RGC, features = unique(c(head(mark.1$gene), head(mark.2$gene))), group.by = "dendro_order") + RotatedAxis()
+```
+
+### Summary Plots
+```{r}
+Rhabdomys_RGC@meta.data$type <- Rhabdomys_RGC@meta.data$seurat_clusters
+Idents(Rhabdomys_RGC) <- "type"
+DefaultAssay(Rhabdomys_RGC) <- "RNA"
+DimPlot(Rhabdomys_RGC, label = TRUE, group.by = "type")
+saveRDS(Rhabdomys_RGC, "../Species_Objects/RhabdomysRGC_int_v2.rds")
+```
+
+
+```{r}
+Rhabdomys_markers <- FindAllMarkers(Rhabdomys_RGC, only.pos = TRUE, max.cells.per.ident = 1000)
+
+Rhabdomys_RGC <- DendroOrder(Rhabdomys_RGC)
+Idents(Rhabdomys_RGC) <- "dendro_order"
+
+PlotUniqueMarkers(Rhabdomys_RGC, Rhabdomys_markers)
+
+DotPlot(Rhabdomys_RGC, features = TopMarkers(Rhabdomys_markers, num_markers = 2), group.by = "dendro_order") + RotatedAxis()
+
+```
+
+```{r}
+DefaultAssay(Rhabdomys_RGC) <- "RNA"
+Idents(Rhabdomys_RGC) <- "type"
+saveRDS(Rhabdomys_RGC, "../Species_Objects/RhabdomysRGC_int_v2.rds")
+
+Rhabdomys_RGC <- readRDS( "../Species_Objects/RhabdomysRGC_int_v2.rds")
+
+
+
+```
+
+
+## BC clustering analysis
+```{r}
+Rhabdomys <- readRDS("../Species_Objects/Rhabdomys_initial.rds")
+
+# Only keep BCs
+Idents(Rhabdomys) <- "cell_class"
+Rhabdomys_BC <- subset(Rhabdomys, cells = WhichCells(Rhabdomys, idents ="BP"))
+
+# Remove cells with low and high counts or features
+VlnPlot(Rhabdomys_BC, "nCount_RNA", group.by = "orig.file", pt.size = .1)
+VlnPlot(Rhabdomys_BC, "nFeature_RNA", group.by = "orig.file", pt.size = .1)
+```
+
+```{r}
+# Remove cells from NEUNpos samples
+Rhabdomys_BC <- subset(Rhabdomys_BC, !((orig.file ==  "RhabNeunPos1b1") | (orig.file ==  "RhabNeunPos1b2") | (orig.file ==  "RhabNeunPos2b1")))
+
+Rhabdomys_BC <- subset(Rhabdomys_BC, subset = nCount_RNA < 6000)
+
+saveRDS(Rhabdomys_BC, file = "../Species_Objects/RhabdomysBC_v1.rds")
+```
+
+### Run clustering pipeline
+
+```{r}
+# Rhabdomys_BC <- readRDS(file = "../Species_Objects/RhabdomysBC_v1.rds")
+Rhabdomys_BC <- ClusterSeurat(Rhabdomys_BC, integrate.by = "orig.file", numPCs = 20)
+saveRDS(Rhabdomys_BC, "../Species_Objects/RhabdomysBC_int_v1.rds")
+```
+
+### Visualize initial clusters
+```{r}
+DimPlot(Rhabdomys_BC, label = TRUE)
+DimPlot(Rhabdomys_BC, group.by = "orig.file", cells = sample(colnames(Rhabdomys_BC)))
+VlnPlot(Rhabdomys_BC, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(Rhabdomys_BC, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+```
+
+
+Examine markers for suspicious clusters. 
+```{r}
+DotPlot(Rhabdomys_BC, features = BC_markers, assay = "RNA") + RotatedAxis()
+
+DotPlot(Rhabdomys_BC, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Cone_markers, Rod_markers, MG_markers, Other_markers), assay = "RNA") + RotatedAxis()
+```
+
+```{r}
+# 13 expreses PR markers
+Rhabdomys_BC <- DropClusters(Rhabdomys_BC, idents = c(13))
+```
+
+### Refine Clusters
+
+Try cluster resolutions
+```{r}
+DefaultAssay(Rhabdomys_BC) <- "integrated"
+
+numPCs <- 18
+Rhabdomys_BC <- FindNeighbors(Rhabdomys_BC, dims = 1:numPCs)
+Rhabdomys_BC <- RunUMAP(Rhabdomys_BC, dims = 1:numPCs)
+
+Rhabdomys_BC <- FindClusters(Rhabdomys_BC, resolution = 1.1)
+
+DimPlot(Rhabdomys_BC, label = TRUE, group.by = "integrated_snn_res.0.5")
+DimPlot(Rhabdomys_BC, label = TRUE, group.by = "integrated_snn_res.0.8")
+DimPlot(Rhabdomys_BC, label = TRUE, group.by = "integrated_snn_res.1.1")
+```
+
+Stick with 0.8, merge as needed
+```{r}
+Idents(Rhabdomys_BC) <- "integrated_snn_res.0.8"
+Rhabdomys_BC@meta.data$seurat_clusters <- Idents(Rhabdomys_BC)
+DefaultAssay(Rhabdomys_BC) <- "RNA"
+```
+
+```{r}
+# 5 and 8 appear to be separate
+# 1 and 7
+
+# Merge 1, 3, 19
+Rhabdomys_RGC <- MergeClusters(Rhabdomys_RGC, idents = c(1,3,19), refactor = TRUE)
+
+ident.1 = 1
+ident.2 = 7
+mark_dif <- FindMarkers(Rhabdomys_BC, ident.1 = ident.1, ident.2 = ident.2)
+mark_dif$pct.dif <- mark_dif$pct.1 - mark_dif$pct.2
+mark_dif <- mark_dif[order(mark_dif$avg_log2FC),]
+mark_dif <- mark_dif[order(mark_dif$pct.dif),]
+
+
+
+DotPlot(Rhabdomys_BC, idents = c(ident.1, ident.2), features = c(head(rownames(mark_dif)), tail(rownames(mark_dif)))) + RotatedAxis()
+
+mark.1 <- FindMarkers(Rhabdomys_BC, ident.1 = ident.1, only.pos = TRUE, max.cells.per.ident = 1000)
+mark.2 <- subset(Rhab_RGC_markers, cluster == ident.2)
+DotPlot(Rhabdomys_RGC, features = unique(c(head(mark.1$gene), head(mark.2$gene))), group.by = "dendro_order") + RotatedAxis()
+```
+
+```{r}
+Rhabdomys_BC <- MergeClusters(Rhabdomys_BC, idents = c(), refactor = TRUE)
+Rhabdomys_BC@meta.data$type <- Rhabdomys_BC@meta.data$seurat_clusters
+Idents(Rhabdomys_BC) <- Rhabdomys_BC@meta.data$type
+Rhabdomys_BC <- MergeClusters(Rhabdomys_BC, idents = c(0,1), refactor = TRUE)
+Rhabdomys_BC@meta.data$type <- Rhabdomys_BC@meta.data$seurat_clusters
+```
+
+
+### Summary Plots
+```{r}
+pan_BC <- c("VSX2")
+Rod <- c("PRKCA", "GRAMD1B")
+Off <- c("GRIK1")
+On <- c("GRM6", "ISL1")
+
+DotPlot(Rhabdomys_BC, features = c(pan_BC, Rod, Off, On), group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+
+Rhabdomys_BC@meta.data$on_off <- factor(Rhabdomys_BC@meta.data$type, levels = rev(c(12, 5,6,7,9,11,13,14,16,17,1,2,3,4,8,10,15,18)))
+
+DotPlot(Rhabdomys_BC, features = c(pan_BC, Rod, Off, On), group.by = "on_off", assay = "RNA") + RotatedAxis()
+```
+
+
+```{r}
+saveRDS(Rhabdomys_BC, "../Species_Objects/RhabdomysBC_int_v2.rds")
+Rhabdomys_BC <- readRDS("../Species_Objects/RhabdomysBC_int_v2.rds")
+
+```
+#Photoreceptor
+```{r}
+Idents(Rhabdomys) <- "cell_class"
+Rhabdomys_PR <- subset(Rhabdomys, cells = WhichCells(Rhabdomys, idents = c("Rod", "Cone")))
+
+
+# Remove cells with low and high counts or features
+VlnPlot(Rhabdomys_PR, "nCount_RNA", group.by = "orig.file", pt.size = .1)
+VlnPlot(Rhabdomys_PR, "nFeature_RNA", group.by = "orig.file", pt.size = .1)
+
+Rhabdomys_PR <- subset(Rhabdomys_PR, (orig.file == "RhabAllnoStb2") | (orig.file == "RhabAllnoStnoSob2") | (orig.file == "RhabNeunNeg1b2") | (orig.file == "RhabNeunNegb1") | (orig.file == "RhabNeunPos1b2"))
+Rhabdomys_PR <- ClusterSeurat(Rhabdomys_PR,  numPCs = 40, integrate.by = "orig.file")
+
+DimPlot(Rhabdomys_PR, label = TRUE)
+DimPlot(Rhabdomys_PR, group.by = "orig.file", cells = sample(colnames(Rhabdomys_PR)))
+VlnPlot(Rhabdomys_PR, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(Rhabdomys_PR, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+
+DotPlot(Rhabdomys_PR, features = Rod_markers, assay = "RNA") + RotatedAxis()
+DotPlot(Rhabdomys_PR, features = Cone_markers, assay = "RNA") + RotatedAxis()
+DotPlot(Rhabdomys_PR, group.by = "type", features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Cone_markers, Rod_markers, MG_markers, "OPN1SW", "OPN1LW", "OPN", "OPN5"), assay = "RNA") + RotatedAxis()
+
+#3, 4, 5 merge (Rods)
+#9, 10, 11 ML cone
+#7 S cone
+#0, 1, 2 L
+#drop 6, 8, 12, 13
+Rhabdomys_PR <- MergeClusters(Rhabdomys_PR, idents = c(3,4,5), refactor = FALSE)
+Rhabdomys_PR <- DropClusters(Rhabdomys_PR, idents = c(6,8,12,13), refactor = FALSE)
+Rhabdomys_PR <- MergeClusters(Rhabdomys_PR, idents = c(0,1,2,9,10,11), refactor = FALSE)
+
+Rhabdomys_PR@meta.data$type = "ML_cone"
+Idents(Rhabdomys_PR) <- "seurat_clusters"
+Rhabdomys_PR@meta.data[WhichCells(Rhabdomys_PR, idents = 7), "type"] <- "S_cone"
+Rhabdomys_PR@meta.data[WhichCells(Rhabdomys_PR, idents = 3), "type"] <- "Rod"
+DimPlot(Rhabdomys_PR, group.by = "type", label = TRUE)
+
+saveRDS(Rhabdomys_PR, file = "../Species_Objects/Rhabdomys_PR_v1")
+```
+#HC
+```{r}
+# Only keep HCs
+Idents(Rhabdomys) <- "cell_class"
+Rhabdomys_HC <- subset(Rhabdomys, cells = WhichCells(Rhabdomys, idents ="HC"))
+
+#Remove cells with low and high counts or features
+VlnPlot(Rhabdomys_HC, "nCount_RNA", group.by = "orig.file", pt.size = .1)
+VlnPlot(Rhabdomys_HC, "nFeature_RNA", group.by = "orig.file", pt.size = .1)
+
+Rhabdomys_HC <- ClusterSeurat(Rhabdomys_HC,  numPCs = 30, integrate.by = "orig.file")
+
+DimPlot(Rhabdomys_HC, label = TRUE)
+DimPlot(Rhabdomys_HC, group.by = "orig.file", cells = sample(colnames(Rhabdomys_HC)))
+VlnPlot(Rhabdomys_HC, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(Rhabdomys_HC, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+
+DotPlot(Rhabdomys_HC, features = HC_markers, assay = "RNA") + RotatedAxis()
+DotPlot(Rhabdomys_HC, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Cone_markers, Rod_markers, MG_markers, "ISL1"), assay = "RNA") + RotatedAxis()
+
+FindMarkers(Rhabdomys_HC, ident.1 = "3", assay = "RNA")
+
+Rhabdomys_HC <- DropClusters(Rhabdomys_HC, idents = c(1,3,4), refactor = FALSE)
+Rhabdomys_HC <- MergeClusters(Rhabdomys_HC, idents = c(0,2), refactor = FALSE)
+Rhabdomys_HC@meta.data$type = "H1"
+Idents(Rhabdomys_HC) <- "seurat_clusters"
+Rhabdomys_HC@meta.data[WhichCells(Rhabdomys_HC, idents = 0), "type"] <- "H1"
+DimPlot(Rhabdomys_HC, group.by = "type", label = TRUE)
+saveRDS(Rhabdomys_HC, file = "../Species_Objects/Rhabdomys_HC_v1.rds")
+
+
+```
+

@@ -1,0 +1,612 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+## Preprocessing 
+
+Load libraries
+```{r}
+library(tidyverse)
+library(reshape2)
+library(ggtree)
+# library(velocyto.R)
+library(Seurat)
+library(ggplot2)
+source("../utils/utilFxns.R")
+source("../utils/plottingFxns.R")
+```
+
+Set data directory and load loom files
+```{r}
+data_dir <- "/Users/joshhahn/Google Drive File Stream/My Drive/shekharlab_data/projects/Ferret/Processed/"
+F1AllS1 <- read.loom.matrices(file = paste0(data_dir, "Ferret1AllS1/velo_outs/possorted_genome_bam_MSTU4.loom"), engine = "hdf5r")
+F1CD90S1 <- read.loom.matrices(file = paste0(data_dir, "Ferret1CD90S1/velo_outs/possorted_genome_bam_0ZS5M.loom"), engine = "hdf5r")
+F2CD90S1 <- read.loom.matrices(file = paste0(data_dir, "Ferret2CD90S1/velo_outs/possorted_genome_bam_URO2O.loom"), engine = "hdf5r")
+F2CD90S2 <- read.loom.matrices(file = paste0(data_dir, "Ferret2CD90S2/velo_outs/possorted_genome_bam_8PB8Q.loom"), engine = "hdf5r")
+F2CD90CD73S3 <- read.loom.matrices(file = paste0(data_dir, "Ferret2CD90CD73dpS3/velo_outs/possorted_genome_bam_GDNUD.loom"), engine = "hdf5r")
+F2CD73S4 <- read.loom.matrices(file = paste0(data_dir, "Ferret2CD73dpS4/velo_outs/possorted_genome_bam_11BNL.loom"), engine = "hdf5r")
+F2AllS5 <- read.loom.matrices(file = paste0(data_dir, "Ferret2AllS5/velo_outs/possorted_genome_bam_2R9M6.loom"), engine = "hdf5r")
+F2AllS6 <- read.loom.matrices(file = paste0(data_dir, "Ferret2AllS6/velo_outs/possorted_genome_bam_VG3LQ.loom"), engine = "hdf5r")
+
+```
+
+Generate count matrices by adding intronic and exonic reads
+```{r}
+F1AllS1_mat = F1AllS1$spliced + F1AllS1$unspliced
+F1CD90S1_mat = F1CD90S1$spliced + F1CD90S1$unspliced
+F2CD90S1_mat = F2CD90S1$spliced + F2CD90S1$unspliced
+F2CD90S2_mat = F2CD90S2$spliced + F2CD90S2$unspliced
+F2CD90CD73S3_mat = F2CD90CD73S3$spliced + F2CD90CD73S3$unspliced
+F2CD73S4_mat = F2CD73S4$spliced + F2CD73S4$unspliced
+F2AllS5_mat = F2AllS5$spliced + F2AllS5$unspliced
+F2AllS6_mat = F2AllS6$spliced + F2AllS6$unspliced
+
+Ferret_mat <- cbind(F1AllS1_mat, F1CD90S1_mat, F2CD90S1_mat, F2CD90S2_mat, F2CD90CD73S3_mat, F2CD73S4_mat, F2AllS5_mat, F2AllS6_mat)
+```
+
+Create Seurat object and set file information
+```{r}
+Ferret <- CreateSeuratObject(Ferret_mat, names.delim = ":")
+Ferret@meta.data[colnames(F1AllS1_mat), 'orig.file'] = "Ferret1AllS1"
+Ferret@meta.data[colnames(F1CD90S1_mat), 'orig.file'] = 'Ferret1CD90S1'
+Ferret@meta.data[colnames(F2CD90S1_mat), 'orig.file'] = 'Ferret2CD90S1'
+Ferret@meta.data[colnames(F2CD90S2_mat), 'orig.file'] = 'Ferret2CD90S2'
+Ferret@meta.data[colnames(F2CD90CD73S3_mat), 'orig.file'] = 'Ferret2CD90CD73S3'
+Ferret@meta.data[colnames(F2CD73S4_mat), 'orig.file'] = 'Ferret2CD73S4'
+Ferret@meta.data[colnames(F2AllS5_mat), 'orig.file'] = 'Ferret2AllS5'
+Ferret@meta.data[colnames(F2AllS6_mat), 'orig.file'] = 'Ferret2AllS6'
+
+Ferret@meta.data[colnames(F1AllS1_mat), 'animal'] = 1
+Ferret@meta.data[colnames(F1CD90S1_mat), 'animal'] = 1
+Ferret@meta.data[colnames(F2CD90S1_mat), 'animal'] = 2
+Ferret@meta.data[colnames(F2CD90S2_mat), 'animal'] = 2
+Ferret@meta.data[colnames(F2CD90CD73S3_mat), 'animal'] = 2
+Ferret@meta.data[colnames(F2CD73S4_mat), 'animal'] = 2
+Ferret@meta.data[colnames(F2AllS5_mat), 'animal'] = 2
+Ferret@meta.data[colnames(F2AllS6_mat), 'animal'] = 2
+```
+
+```{r}
+VlnPlot(Ferret, features = "nCount_RNA", pt.size = 0)
+VlnPlot(Ferret, features = "nFeature_RNA", pt.size = 0)
+```
+
+```{r}
+Ferret <- ClusterSeurat(Ferret)
+saveRDS(Ferret, file = "../Species_Objects/Ferret_initial.rds")
+```
+
+Visualize initial clusters
+```{r}
+Ferret <- readRDS("../Species_Objects/Ferret_initial.rds")
+DimPlot(Ferret, label = TRUE)
+DimPlot(Ferret, group.by = "orig.file")
+VlnPlot(Ferret, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(Ferret, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+```
+## Cell class annotation
+
+Look for major retinal cell classes
+```{r}
+# Ferret <- DendroOrder(Ferret)
+Ferret <- readRDS("../Species_Initial/Ferret_initial.rds")
+
+RGC_markers= c("RBPMS", "SLC17A6", "POU6F2")
+BC_markers=c("VSX2", "CABP5", "GRIK1", "OTX2", "PRKCA")
+AC_markers=c("TFAP2A", "GAD2", "SLC6A9")
+HC_markers=c("ONECUT1", "LHX1", "CALB1", "TPM3")
+Cone_markers=c("PDE6H", "CRX", "ARR3")
+Rod_markers=c("SAG", "PDC", "RHO")
+MG_markers=c("SLC1A3","RLBP1", "APOE")
+
+DotPlot(Ferret, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Cone_markers, Rod_markers, MG_markers), group.by = "dendro_order") + RotatedAxis()
+```
+
+Annotate clusters using DE genes and Dot plot of marker genes
+```{r}
+Idents(Ferret) <- "seurat_clusters"
+Ferret_genes <- FindAllMarkers(Ferret)
+saveRDS(Ferret_genes, file = "../Marker_Genes/Ferret_genes_initial.rds")
+```
+
+
+```{r}
+Ferret@meta.data$cell_class = "Other"
+Ferret@meta.data[WhichCells(Ferret, idents =c(30,10,33,14,13,11,35,24,22,31,23,17,21,28,15,18,36,19,9)),]$cell_class = "RGC"
+Ferret@meta.data[WhichCells(Ferret, idents = c(32,34,29,12,37,2, 41)),]$cell_class = "BP"
+Ferret@meta.data[WhichCells(Ferret, idents = c(25)),]$cell_class = "GlyAC"
+Ferret@meta.data[WhichCells(Ferret, idents = c(40,16)),]$cell_class = "GabaAC"
+Ferret@meta.data[WhichCells(Ferret, idents = c(42)),]$cell_class = "HC"
+Ferret@meta.data[WhichCells(Ferret, idents = c(39, 6,3,0,27)),]$cell_class = "Rod"
+Ferret@meta.data[WhichCells(Ferret, idents = c(5)),]$cell_class = "Cone"
+Ferret@meta.data[WhichCells(Ferret, idents = c(38,7,4,20,8)),]$cell_class = "MG"
+Ferret@meta.data[WhichCells(Ferret, idents = c(20)),]$cell_class = "MicroG"
+Ferret@meta.data[WhichCells(Ferret, idents = c(32,34,29,12,37,2,41)),]$cell_class = "BP"
+Ferret@meta.data[WhichCells(Ferret, idents = c(1, 26, 8)),]$cell_class = "Other"
+
+DimPlot(Ferret, group.by = "cell_class")
+```
+
+Investigate unmarked clusters to see if they have any unique markers
+```{r}
+Ferret_genes <- readRDS("../Species_Markers/Ferret_genes_initial.rds")
+
+# CLuster 5 - potentially PR and bipolar doublet (as is 41) expresses ARR3. ARR3 is strong, so annotate as Cone. Bipolar markers are stronger in 41, so retain as BP.
+markers5 <- FindMarkers(Ferret, ident.1 = "5")
+Ferret@meta.data[WhichCells(Ferret, idents = c(5)),]$cell_class = "Cone"
+
+# Cluster 38 - - bipolar glia doublets, more likely muller glia
+markers38 <- FindMarkers(Ferret, ident.1 = "38")
+Ferret@meta.data[WhichCells(Ferret, idents = c(38)),]$cell_class = "MG"
+
+# Cluster 1 - low quality cells, annotated as other
+markers1 <- FindMarkers(Ferret, ident.1 = "1")
+Ferret@meta.data[WhichCells(Ferret, idents = c(1)),]$cell_class = "PR"
+
+# Cluster 20 - microglia, C1QB. Annotate as MicroG
+markers20 <- FindMarkers(Ferret, ident.1 = "20")
+Ferret@meta.data[WhichCells(Ferret, idents = c(20)),]$cell_class = "MicroG"
+
+# Cluster 8 - expresses CLDN5, endothelial. Annotate as other for now
+markers8 <- FindMarkers(Ferret, ident.1 = "8")
+Ferret@meta.data[WhichCells(Ferret, idents = c(8)),]$cell_class = "MG"
+
+# CLuster 26 - astrocyte, expresses RBP1, GFAP. Annotate as other
+markers26 <- FindMarkers(Ferret, ident.1 = "26")
+
+print(c("Cluster 5: ", head(markers5$gene)))
+print(c("Cluster 38: ", head(markers38$gene)))
+print(c("Cluster 1: ", head(markers1$gene)))
+print(c("Cluster 20: ", head(markers20$gene)))
+print(c("Cluster 8: ", head(markers8$gene)))
+print(c("Cluster 26: ", head(markers26$gene)))
+
+saveRDS(Ferret@meta.data, "../Metadata/Ferret_metadata.rds")
+saveRDS(Ferret, "../Species_Initial/Ferret_initial.rds")
+
+```
+
+
+Plot cell type by file
+```{r}
+Ferret <- readRDS("../Species_Objects/Ferret_initial.rds")
+counts <- table(Ferret@meta.data$cell_class, Ferret@meta.data$orig.file)
+counts
+counts <- t(t(counts) / colSums(counts))
+barplot(counts, legend = rownames(counts), col= c("red","orange","yellow","green","blue", "black"))
+```
+
+## RGC clustering analysis
+Create separate RGC object
+```{r}
+Ferret <- readRDS("../Species_Objects/Ferret_initial.rds")
+
+# Only keep RGCs
+Idents(Ferret) <- "cell_class"
+Ferret_RGC <- subset(Ferret, cells = WhichCells(Ferret, idents ="RGC"))
+
+# Remove cells from samples that do not enrich for RGCs
+Idents(Ferret_RGC) <- "orig.file"
+Ferret_RGC <- subset(Ferret_RGC, cells =  WhichCells(Ferret_RGC, idents =c("Ferret1CD90S1", "Ferret2CD90S1", "Ferret2CD90S2")))
+
+# Remove cells with low and high counts or features
+VlnPlot(Ferret_RGC, "nCount_RNA", group.by = "orig.file", pt.size = .1)
+VlnPlot(Ferret_RGC, "nFeature_RNA", group.by = "orig.file", pt.size = .1)
+
+Ferret_RGC <- subset(Ferret_RGC, subset = nFeature_RNA > 500 & nCount_RNA < 25000)
+
+
+saveRDS(Ferret_RGC, file = "../Species_Objects/FerretRGC_v1.rds")
+```
+
+Batch correct Ferret RGCs and run clustering pipeline
+
+```{r}
+Ferret_RGC <- readRDS("../Species_Objects/FerretRGC_v1.rds")
+
+obj.list <- SplitObject(Ferret_RGC, split.by = "animal")
+for (i in 1:length(obj.list)) {
+      obj.list[[i]] <- NormalizeData(obj.list[[i]], verbose = FALSE)
+      obj.list[[i]] <- FindVariableFeatures(obj.list[[i]], selection.method = "vst", nfeatures = 2000, verbose = FALSE)
+}
+obj.anchors <- FindIntegrationAnchors(object.list = obj.list)
+Ferret_RGC <- IntegrateData(anchorset = obj.anchors)
+DefaultAssay(Ferret_RGC) <- "integrated"
+
+Ferret_RGC <- ScaleData(Ferret_RGC, verbose = FALSE)
+Ferret_RGC <- RunPCA(Ferret_RGC, npcs = 30, verbose = FALSE)
+ElbowPlot(Ferret_RGC, ndims = 30)  
+
+# 20 PCs seems to suffciently capture the data
+nPCs <- 20
+Ferret_RGC <- FindNeighbors(Ferret_RGC, dims = 1:nPCs)
+# Start with a resolution parameter of 1
+Ferret_RGC <- FindClusters(Ferret_RGC, resolution = 1.0)
+Ferret_RGC <- RunTSNE(Ferret_RGC, dims = 1:nPCs)
+Ferret_RGC <- RunUMAP(Ferret_RGC, dims = 1:nPCs)
+
+
+saveRDS(Ferret_RGC, "~/Species_Objects/FerretRGC_integrated_v1.rds")
+```
+
+Visualize initial clusters
+```{r}
+# Ferret_RGC <- readRDS("~/Species_Objects/FerretRGC_integrated_v1.rds")
+DimPlot(Ferret_RGC, label = TRUE)
+DimPlot(Ferret_RGC, group.by = "orig.file", cells = sample(colnames(Ferret_RGC)))
+VlnPlot(Ferret_RGC, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(Ferret_RGC, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+```
+```{r}
+FerRGC_markers <- FindAllMarkers(Ferret_RGC, assay = "RNA", test.use = "MAST")
+saveRDS(FerRGC_markers, "../Species_Markers/FerretRGCMarkers.rds")
+```
+
+Examine markers for suspicious clusters, remove contaminant clusters
+```{r}
+Ferret_RGC <- readRDS("../Species_Objects/FerretRGC_integrated_v1.rds")
+FerRGC_markers <- readRDS("../Species_Markers/FerretRGCMarkers.rds")
+
+DotPlot(Ferret_RGC, features = c("RBPMS", "SLC17A6", "POU6F2"), assay = "RNA")
+
+# Clusters 7, 21 have too low count and do not express SLC17A6 and POU6F2 strongly
+
+# Cluster 0 and 28 are likely endothelial cells
+DotPlot(Ferret_RGC, features = "PECAM1", assay = "RNA")
+head(FerRGC_markers[FerRGC_markers$cluster==0,], 20)
+
+# Cluster 30 is Glia
+DotPlot(Ferret_RGC, features = "APOE", assay = "RNA")
+
+Ferret_RGC <- DropClusters(Ferret_RGC, idents = c(0,7,21,28,30), refactor = TRUE)
+Ferret_RGC <- RunUMAP(Ferret_RGC, dims = 1:20)
+
+DimPlot(Ferret_RGC, label = TRUE, group.by = "seurat_clusters")
+
+saveRDS(Ferret_RGC, "../Species_Objects/FerretRGC_integrated_v2.rds")
+```
+
+Repeat clustering to validate removing cells does not impact clustering
+```{r}
+test <- Ferret_RGC
+test <- FindVariableFeatures(test)
+test <- ScaleData(test, verbose = FALSE)
+test <- RunPCA(test, npcs = 30, verbose = FALSE)
+
+nPCs <- 20
+test <- FindNeighbors(test, dims = 1:nPCs)
+# Start with a resolution parameter of 1
+test <- FindClusters(test, resolution = 1.0)
+test <- RunUMAP(test, dims = 1:nPCs)
+
+MakePrettyConfusionMatrix(table(test@meta.data$seurat_clusters, Ferret_RGC@meta.data$seurat_clusters))
+
+# Appears to be one split check if valid. Split appears to be spurious: reclustering not needed.
+mark4_10 <- FindMarkers(test, ident.1 = 4, ident.2 = 10)
+MakePrettyConfusionMatrix(table(test@meta.data$seurat_clusters, Ferret_RGC@meta.data$seurat_clusters))
+DotPlot(Ferret_RGC, features = rownames(head(mark4_10)))
+```
+
+Determine if any clusters need to be merged
+```{r}
+Ferret_RGC <- readRDS("../Species_Objects/FerretRGC_integrated_v2.rds")
+
+Idents(Ferret_RGC) <- "seurat_clusters"
+FerRGC_markers <- FindAllMarkers(Ferret_RGC, assay = "RNA", only.pos = TRUE)
+
+Ferret_RGC <- DendroOrder(Ferret_RGC)
+Idents(Ferret_RGC) <- "dendro_order"
+
+# Each cluster has at least one unique gene, retain clusters as is
+DotPlot(Ferret_RGC, features = TopMarkers(Ferret_RGC, markers = FerRGC_markers, num_markers = 2), assay = "RNA", group.by = "dendro_order") + RotatedAxis()
+
+DotPlot(Ferret_RGC, features = head(subset(FerRGC_markers, cluster == 6),10)$gene, group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+
+top_markers <- c( "SMPX", "NFIB", "PTPRK", "PLPP4", "FSTL1", "SCN10A", "CCK", "ENSMPUG00000025640", "GABRD", "RUNX1", "CXCL14", "FRAS1" , "PTN",  "NETO1" ,"MATN4", "NMU", "WLS", "DRD5", "NMB",          "HTR2C", "PDE1A", "ENSMPUG00000031397", "IKZF1", "TOX3", "SST", "IGFBP7", "ENSMPUG00000004412")
+
+DotPlot(Ferret_RGC, features = top_markers, assay = "RNA") + RotatedAxis()  
+
+saveRDS(Ferret_RGC, "../Species_Objects/FerretRGC_integrated_v2.rds")
+```
+
+
+Repeat DE gene calclations using MAST
+```{r}
+Ferret_RGC <- readRDS("../Species_Objects/FerretRGC_integrated_v2.rds")
+Idents(Ferret_RGC) <- "seurat_clusters"
+
+FerRGC_markers <- FindAllMarkers(Ferret_RGC, assay = "RNA", test.use = "MAST")
+saveRDS(FerRGC_markers, "../Species_Markers/FerretRGCMarkers_v2.rds")
+```
+
+Convert UMAP and diagonal gene plots to files
+```{r}
+Ferret_RGC <- readRDS("../Species_Objects/FerretRGC_integrated_v2.rds")
+RGC_markers <- readRDS()
+
+pdf("../Figures/Species_UMAPs/FerretRGC.pdf", w=4, h=4, useDingbats = FALSE)
+DimPlot(Ferret_RGC, label = TRUE) + NoLegend()
+dev.off()
+
+markers <- PlotUniqueMarkers(Ferret_RGC, RGC_markers, edits = TRUE)
+pdf("Figures/Species_MarkerPlots/FerretRGC.pdf", , w=6, h=4, useDingbats = FALSE)
+dev.off()
+
+```
+
+## BC clustering analysis
+
+```{r}
+Ferret <- readRDS("../Species_Objects/Ferret_initial.rds")
+
+# Only keep BCs
+Idents(Ferret) <- "cell_class"
+Ferret_BC <- subset(Ferret, cells = WhichCells(Ferret, idents ="BC"))
+
+# Remove cells from samples that do not enrich for BCs
+Idents(Ferret_BC) <- "orig.file"
+Ferret_BC <- subset(Ferret_BC, cells = WhichCells(Ferret_BC, idents =c("Ferret1AllS1", "Ferret2CD90CD73S3", "Ferret2CD73S4", "Ferret2AllS5", "Ferret2AllS6")))
+
+# Remove cells with low and high counts or features
+VlnPlot(Ferret_BC, "nCount_RNA", group.by = "orig.file", pt.size = .1)
+VlnPlot(Ferret_BC, "nFeature_RNA", group.by = "orig.file", pt.size = .1)
+
+Ferret_BC <- subset(Ferret_BC, subset = nFeature_RNA > 500 & nCount_RNA < 10000)
+
+
+saveRDS(Ferret_BC, file = "../Species_Objects/FerretBC_v1.rds")
+```
+
+### Batch correct and cluster
+```{r}
+Ferret_BC <- readRDS("../Species_Objects/FerretBC_v1.rds")
+obj.list <- SplitObject(Ferret_BC, split.by = "animal")
+for (i in 1:length(obj.list)) {
+      obj.list[[i]] <- NormalizeData(obj.list[[i]], verbose = FALSE)
+      obj.list[[i]] <- FindVariableFeatures(obj.list[[i]], selection.method = "vst", nfeatures = 2000, verbose = FALSE)
+}
+obj.anchors <- FindIntegrationAnchors(object.list = obj.list)
+Ferret_BC <- IntegrateData(anchorset = obj.anchors)
+DefaultAssay(Ferret_BC) <- "integrated"
+
+Ferret_BC <- ScaleData(Ferret_BC, verbose = FALSE)
+Ferret_BC <- RunPCA(Ferret_BC, npcs = 40, verbose = FALSE)
+ElbowPlot(Ferret_BC, ndims = 40)  
+
+# 20 PCs seems to suffciently capture the data
+nPCs <- 20
+Ferret_BC <- FindNeighbors(Ferret_BC, dims = 1:nPCs)
+# Start with a resolution parameter of 1
+Ferret_BC <- FindClusters(Ferret_BC, resolution = 1.0)
+Ferret_BC <- RunTSNE(Ferret_BC, dims = 1:nPCs)
+Ferret_BC <- RunUMAP(Ferret_BC, dims = 1:nPCs)
+
+
+saveRDS(Ferret_BC, "~/Species_Objects/FerretBC_integrated_v1.rds")
+```
+
+Visualize initial clusters
+```{r}
+# Ferret_BC <- readRDS("~/Species_Objects/FerretBC_integrated_v1.rds")
+DimPlot(Ferret_BC, label = TRUE)
+DimPlot(Ferret_BC, group.by = "orig.file", cells = sample(colnames(Ferret_BC)))
+VlnPlot(Ferret_BC, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(Ferret_BC, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+```
+
+### DE Markers
+```{r}
+FerBC_markers <- FindAllMarkers(Ferret_BC, assay = "RNA", test.use = "MAST")
+saveRDS(FerBC_markers, "../Species_Markers/FerretBCMarkers.rds")
+```
+
+Examine markers for suspicious clusters, remove contaminant clusters
+```{r}
+DotPlot(Ferret_BC, features = c("VSX2","OTX2","GRIK1", "CABP5"), assay = "RNA")
+PlotUniqueMarkers(Ferret_BC, markers = FerBC_markers)
+
+# Clusters 5, 7, 8, 11, 12 are not BC (low VSX2). They are  photoreceptors
+DotPlot(Ferret_BC, features = c("ARR3", "PDC", "NRL", "RHO","GNGT1","SAG"), assay = "RNA") + RotatedAxis()
+
+# Clusters 10, 17 also appear to express photoreceptor markers
+head(FerBC_markers[FerBC_markers$cluster==10,], 20) # definitely PR, expresses SAG, GNGT1, RHO
+head(FerBC_markers[FerBC_markers$cluster==17,], 20) # Expresses PDE6C
+
+# Cluster 19 is Muller glia, APOE, RLBP1
+head(FerBC_markers[FerBC_markers$cluster==19,], 10)
+
+Ferret_BC <- DropClusters(Ferret_BC, idents = c(5,7,8,10,11,12,17,19))
+```
+
+### Repeat clustering after contaminant removal
+```{r}
+Ferret_BC <- RunPCA(Ferret_BC, npcs = 40, verbose = FALSE)
+
+# 20 PCs seems to suffciently capture the data
+nPCs <- 20
+Ferret_BC <- FindNeighbors(Ferret_BC, dims = 1:nPCs)
+# Start with a resolution parameter of 1
+Ferret_BC <- FindClusters(Ferret_BC, resolution = 1.0)
+Ferret_BC <- RunTSNE(Ferret_BC, dims = 1:nPCs)
+Ferret_BC <- RunUMAP(Ferret_BC, dims = 1:nPCs)
+
+
+saveRDS(Ferret_RGC, file = "../Species_Objects/FerretRGC_integrated_v2.rds")
+```
+
+Visualize clusters
+```{r}
+Ferret_BC <- readRDS("~/Species_Objects/FerretBC_integrated_v2.rds")
+DimPlot(Ferret_BC, label = TRUE)
+DimPlot(Ferret_BC, group.by = "orig.file", cells = sample(colnames(Ferret_BC)))
+VlnPlot(Ferret_BC, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(Ferret_BC, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+```
+
+### Merge clusters
+```{r}
+FerBC_markers <- FindAllMarkers(Ferret_BC, assay = "RNA", test.use = "MAST", only.pos = TRUE)
+saveRDS(FerBC_markers, file = "../Species_Markers/FerretBCMarkers_v2.rds")
+```
+
+Plot the top markers for each cluster, grouped by a dendrogram
+```{r}
+FerBC_markers <- readRDS("../Species_Markers/FerretBCMarkers_v2.rds")
+Ferret_BC <- readRDS("../Species_Objects/FerretBC_integrated_v2.rds")
+
+Ferret_BC <- DendroOrder(Ferret_BC)
+
+DotPlot(Ferret_BC, features = TopMarkers(Ferret_BC, markers = FerBC_markers, num_markers = 4), assay = "RNA", group.by = "dendro_order") + RotatedAxis()
+```
+
+
+Merge clusters
+```{r}
+# 12 and 15 - keep separate since multiple genes differentiate them
+DotPlot(Ferret_BC, features = head(rownames(FindMarkers(Ferret_BC, ident.1 = 12, ident.2 = 15)),10), group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+
+# 0, 1, 2, 3, 4, 7 - merge
+DotPlot(Ferret_BC, features = head(subset(FerBC_markers, cluster == 0),10)$gene, group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+DotPlot(Ferret_BC, features = head(rownames(FindMarkers(Ferret_BC, ident.1 = 1, ident.2 = c(0,2,3,4,7))),10), group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+
+# Cluster 18 vs Cluster 5: 18 has signature more similar to rod bipolars, keep separate
+DotPlot(Ferret_BC, features = head(subset(FerBC_markers, cluster == 18),10)$gene, group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+DotPlot(Ferret_BC, features = head(rownames(FindMarkers(Ferret_BC, ident.1 = 18, ident.2 = 5)),10), group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+
+# Cluster 6 vs Cluster 15: 15 has some differentiating markers: retain as separate for now
+DotPlot(Ferret_BC, features = head(rownames(FindMarkers(Ferret_BC, ident.1 = 15, ident.2 = 6, only.pos = TRUE)),10), group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+
+Ferret_BC <- MergeClusters(Ferret_BC, idents = c(0,1,2,3,4,7), refactor = TRUE)
+
+saveRDS(Ferret_BC, "../Species_Objects/FerretBC_integrated_v3.rds")
+```
+
+Calculate a new set of DE genes, visualize clusters
+```{r}
+# Ferret_BC <- readRDS("../Species_Objects/FerretBC_integrated_v3.rds")
+DimPlot(Ferret_BC, label = TRUE)
+FerBC_markers <- FindAllMarkers(Ferret_BC, assay = "RNA", test.use = "MAST")
+saveRDS(FerBC_markers, file = "../Species_Markers/FerretBCMarkers_v3.rds")
+```
+
+
+### Check for doublets
+```{r}
+Ferret_BC <- readRDS("../Species_Objects/FerretBC_integrated_v3.rds")
+
+
+# Clusters 8 and 11 potentially rod photoreceptors
+BC_markers=c("VSX2", "CABP5", "OTX2", "PRKCA", "TMEM215")
+AC_markers=c("TFAP2A","TFAP2B", "GAD1", "C1QL1", "C1QL2", "SLC6A9", "PAX6")
+HC_markers=c("RET", "ONECUT1","ONECUT2", "CALB1", "TPM3", "NRSN1")
+PR_markers=c("PDE6H", "CRX", "SAG", "PDC", "RHO", "ARR3")
+MG_markers=c("SLC1A3","RLBP1", "GLUL", "APOE")
+Other_markers = c("FN1", "GSN","CLDN5","RGS5")
+
+DotPlot(Ferret_BC, features = c(BC_markers, AC_markers, HC_markers, PR_markers, MG_markers, Other_markers), assay = "RNA") + RotatedAxis()
+
+```
+
+Remove clusters 8 and 11 as they are photoreceptor doublets
+```{r}
+Ferret_BC <- DropClusters(Ferret_BC, idents = c(8,11), refactor = TRUE)
+Ferret_BC@meta.data$type <- Ferret_BC@meta.data$seurat_clusters
+Idents(Ferret_BC) <- "type"
+
+saveRDS(Ferret_BC, "../Species_Objects/FerretBC_integrated_v4.rds")
+```
+
+
+
+### Convert UMAP and diagonal gene plots to files
+```{r}
+Ferret_BC <- readRDS("../Species_Objects/FerretBC_integrated_v4.rds")
+BC_markers <- readRDS()
+
+pdf("../Figures/Species_UMAPs/FerretBC.pdf", w=4, h=4, useDingbats = FALSE)
+DimPlot(Ferret_BC, label = TRUE) + NoLegend()
+dev.off()
+
+markers <- PlotUniqueMarkers(Ferret_BC, BC_markers, edits = TRUE)
+pdf("Figures/Species_MarkerPlots/FerretBC.pdf", , w=6, h=4, useDingbats = FALSE)
+dev.off()
+
+```
+
+
+
+## Rods
+Create separate RGC object
+```{r}
+Ferret <- readRDS("../Species_Objects/Ferret_initial.rds")
+Idents(Ferret) <- "dendro_order"
+
+Rod_markers <- c("RHO" ,"PDC", "NRL", "SAG", "GNAT1")
+Cone_markers <- c("ARR3", "PDE6H",  "GNAT2","OPN1SW")
+DotPlot(Ferret, features = c(Rod_markers, Cone_markers), group.by = "dendro_order") + RotatedAxis()
+
+# Subset to rods, do preliminary clustering, and save
+Ferret_Rods <- subset(Ferret, cells = WhichCells(Ferret, idents =c(0,3,6,27)))
+Ferret_Rods <- ClusterSeurat(Ferret_Rods)
+saveRDS(Ferret_Rods, file = "../Species_Objects/FerretRods_v1.rds")
+```
+#PR
+```{r}
+Idents(Ferret) <- "cell_class"
+Ferret_PR <- subset(Ferret, cells = WhichCells(Ferret, idents = c("Rod", "Cone")))
+
+# Remove cells with low and high counts or features
+VlnPlot(Ferret_PR, "nCount_RNA", group.by = "orig.file", pt.size = .1)
+VlnPlot(Ferret_PR, "nFeature_RNA", group.by = "orig.file", pt.size = .1)
+
+Ferret_PR <- ClusterSeurat(Ferret_PR,  numPCs = 25, integrate.by = "orig.file")
+saveRDS(Ferret_PR, file = "../Species_Objects/Ferret_PR_int_v1.rds")
+
+DimPlot(Ferret_PR, label = TRUE)
+DimPlot(Ferret_PR, group.by = "orig.file", cells = sample(colnames(Ferret_PR)))
+VlnPlot(Ferret_PR, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(Ferret_PR, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+
+DotPlot(Ferret_PR, features = BC_markers, assay = "RNA") + RotatedAxis()
+DotPlot(Ferret_PR, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Cone_markers, Rod_markers, MG_markers, "OPN1SW", "OPN1LW", "OPN", "OPN5"), assay = "RNA") + RotatedAxis()
+
+#drop 0, 3, 8, 9, 10, 11, 13, 17
+#6, 7 ML
+#12 SW
+#merge 1-5 rod
+#merge 14-24 (except 17) rod
+
+Ferret_PR <- DropClusters(Ferret_PR, idents = c(0,3,8,9,10,11,13,17), refactor = FALSE)
+Ferret_PR <- MergeClusters(Ferret_PR, idents = c(6,7), refactor = FALSE)
+Ferret_PR <- MergeClusters(Ferret_PR, idents = c(1,2,4,5), refactor = FALSE)
+Ferret_PR <- MergeClusters(Ferret_PR, idents = c(14,15,16,18:24), refactor = FALSE)
+Ferret_PR <- MergeClusters(Ferret_PR, idents = c(1,14), refactor = FALSE)
+
+Ferret_PR@meta.data$type = "ML_cone"
+Idents(Ferret_PR) <- "seurat_clusters"
+Ferret_PR@meta.data[WhichCells(Ferret_PR, idents = 12), "type"] <- "S_cone"
+Ferret_PR@meta.data[WhichCells(Ferret_PR, idents = 1), "type"] <- "Rod"
+DimPlot(Ferret_PR, group.by = "type", label = TRUE)
+DotPlot(Ferret_PR, group.by = "type", features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Cone_markers, Rod_markers, MG_markers, "OPN1SW", "OPN1LW", "OPN", "OPN5"), assay = "RNA") + RotatedAxis()
+saveRDS(Ferret_PR, file = "../Species_Objects/Ferret_PR_v2.rds")
+```
+
+
+
+
+
+#HC, #not enough cells
+```{r}
+# Only keep HCs
+Idents(Ferret) <- "cell_class"
+Ferret_HC <- subset(Ferret, cells = WhichCells(Ferret, idents ="HC"))
+
+# Remove cells with low and high counts or features
+VlnPlot(Ferret_HC, "nCount_RNA", group.by = "orig.file", pt.size = .1)
+VlnPlot(Ferret_HC, "nFeature_RNA", group.by = "orig.file", pt.size = .1)
+```
+
+
+```{r}
+```

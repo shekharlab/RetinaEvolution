@@ -1,0 +1,494 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+## Preprocessing 
+
+Load libraries
+```{r}
+library(reshape2)
+library(Seurat)
+library(SeuratDisk)
+library(ggplot2)
+source("../utils/utilFxns.R")
+source("../utils/plottingFxns.R")
+```
+
+Set data directory and load loom files
+```{r}
+data_dir <- "/Users/joshhahn/Google Drive/My Drive/shekharlab_data/projects/Lizard/"
+ 
+
+#Convert(paste0(data_dir, "LizChx10high1/velo_outs/full.h5ad"), dest = "h5seurat")
+Chx10_1 <- LoadH5Seurat(paste0(data_dir, "LizChx10high1/velo_outs/full.h5seurat"))
+
+#Convert(paste0(data_dir, "LizChx10high2/velo_outs/full.h5ad"), dest = "h5seurat")
+Chx10_2 <- LoadH5Seurat(paste0(data_dir, "LizChx10high2/velo_outs/full.h5seurat"))
+
+#Convert(paste0(data_dir, "LizardNEUNpos/velo_outs/full.h5ad"), dest = "h5seurat")
+NEUNpos <- LoadH5Seurat(paste0(data_dir, "LizardNEUNpos/velo_outs/full.h5seurat"))
+
+#Convert(paste0(data_dir, "LizardNEUNneg/velo_outs/full.h5ad"), dest = "h5seurat")
+NEUNneg <- LoadH5Seurat(paste0(data_dir, "LizardNEUNneg/velo_outs/full.h5seurat"))
+
+#Convert(paste0(data_dir, "S14_Anole/velo_outs/full.h5ad"), dest = "h5seurat")
+S14 <- LoadH5Seurat(paste0(data_dir, "S14_Anole/velo_outs/full.h5seurat"))
+
+Convert(paste0(data_dir, "LizChx10/velo_outs/full.h5ad"), dest = "h5seurat")
+Chx10 <- LoadH5Seurat(paste0(data_dir, "LizChx10/velo_outs/full.h5seurat"))
+
+Convert(paste0(data_dir, "LizNueun1/velo_outs/full.h5ad"), dest = "h5seurat")
+Nueun1 <- LoadH5Seurat(paste0(data_dir, "LizNueun1/velo_outs/full.h5seurat"))
+
+Convert(paste0(data_dir, "LizNueun2/velo_outs/full.h5ad"), dest = "h5seurat")
+Nueun2 <- LoadH5Seurat(paste0(data_dir, "LizNueun2/velo_outs/full.h5seurat"))
+
+```
+
+
+LizChx10high1 / 2 are low quality, do not include. 
+```{r}
+Lizard_mat <- cbind(NEUNpos@assays$matrix@counts, NEUNneg@assays$matrix@counts, S14@assays$matrix@counts, Chx10@assays$matrix@counts, Nueun1@assays$matrix@counts, Nueun2@assays$matrix@counts)
+
+Lizard <- CreateSeuratObject(Lizard_mat, names.delim = ":")
+
+Lizard@meta.data[colnames(NEUNpos), 'orig.file'] = "LizardNEUNpos"
+Lizard@meta.data[colnames(NEUNneg), 'orig.file'] = "LizardNEUNneg"
+Lizard@meta.data[colnames(S14), 'orig.file'] = "S14_Anole"
+Lizard@meta.data[colnames(Chx10), 'orig.file'] = "LizChx10"
+Lizard@meta.data[colnames(Nueun1), 'orig.file'] = "LizNueun1"
+Lizard@meta.data[colnames(Nueun2), 'orig.file'] = "LizNueun2"
+
+
+```
+
+
+
+```{r}
+VlnPlot(Lizard, features = "nCount_RNA", pt.size = 0, group.by = "orig.file", y.max = 10000)
+VlnPlot(Lizard, features = "nFeature_RNA", pt.size = 0, group.by = "orig.file")
+```
+
+```{r}
+saveRDS(Lizard, file = "../Species_Initial/Lizard_initial.rds")
+```
+
+## Cell class annotation
+
+```{r}
+Lizard <- readRDS("../Species_Initial/Lizard_initial.rds")
+Lizard <- ClusterSeurat(Lizard, numPCs = 20, cluster_resolution = 0.5)
+saveRDS(Lizard, file = "../Species_Objects/Lizard_initial.rds")
+```
+
+
+Visualize initial clusters
+```{r}
+DimPlot(Lizard, label = TRUE)
+DimPlot(Lizard, group.by = "orig.file")
+VlnPlot(Lizard, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(Lizard, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+```
+
+```{r}
+
+```
+
+Look for major retinal cell classes
+```{r}
+Lizard <- DendroOrder(Lizard)
+
+RGC_markers= tolower(c("RBPMS", "RBPMS2", "SLC17A6", "POU6F2", "THY1", "NEFL", "NEFM", "SNCG"))
+BC_markers=tolower(c("VSX2", "OTX2", "GRM6", "TRPM1", "VSX1", "CABP5", "GRIK1", "PRKCA"))
+AC_markers=tolower(c("TFAP2A", "TFAP2B", "TFAP2C", "GAD1", "GAD2", "SLC6A9", "C1QL1", "C1QL2"))
+HC_markers=tolower(c("ONECUT2","ONECUT3", "LHX1", "CALB1", "TPM3"))
+Cone_markers=tolower(c("PDE6H", "CRX", "ARR3"))
+Rod_markers=tolower(c("SAG", "PDC", "RHO"))
+MG_markers=tolower(c("SLC1A3","RLBP1", "APOE"))
+Other_markers=tolower(c("S100B", "GFAP", "C1QA", "C1QB", "CLDN5", "IGFBP7"))
+
+DotPlot(Lizard, features = toupper(c(RGC_markers, BC_markers, AC_markers, HC_markers, Cone_markers, Rod_markers, MG_markers, Other_markers)), group.by = "dendro_order") + RotatedAxis()
+```
+
+```{r}
+plot(Lizard@tools$BuildClusterTree)
+```
+
+
+Remove clusters with low counts / features
+```{r}
+Lizard <- DropClusters(Lizard, idents = c(), refactor = FALSE)
+```
+
+
+Annotate clusters using DE genes and Dot plot of marker genes
+
+```{r}
+Lizard@meta.data$cell_class = "Nope"
+Lizard@meta.data[WhichCells(Lizard, idents =c(25,4,5)),]$cell_class = "RGC"
+Lizard@meta.data[WhichCells(Lizard, idents = c(24,14,20, 9, 12)),]$cell_class = "BP"
+Lizard@meta.data[WhichCells(Lizard, idents = c(17)),]$cell_class = "HC"
+Lizard@meta.data[WhichCells(Lizard, idents = c(26,19)),]$cell_class = "MG"
+Lizard@meta.data[WhichCells(Lizard, idents = c(10)),]$cell_class = "Rod"
+Lizard@meta.data[WhichCells(Lizard, idents = c(3,13,11)),]$cell_class = "Cone"
+
+Lizard@meta.data[WhichCells(Lizard, idents = c(7)),]$cell_class = "GlyAC"
+Lizard@meta.data[WhichCells(Lizard, idents = c(15, 23, 16, 8, 6, 22, 2)),]$cell_class = "GabaAC"
+Lizard@meta.data[WhichCells(Lizard, idents = c(0,1, 18, 21)),]$cell_class = "Other"
+
+
+DimPlot(Lizard, group.by = "cell_class")
+
+
+```
+
+
+Investigate unmarked clusters to see if they have any unique markers
+```{r}
+Mouse <- readRDS("../Species_Initial/Mouse_initial.rds")
+
+# 
+ident = 18
+mark <- FindMarkers(Lizard, ident.1 = ident, max.cells.per.ident = 1000)
+DotPlot(Mouse, features = toupper(head(rownames(mark), 20)), group.by = "cell_class") + RotatedAxis()
+
+```
+
+```{r}
+DimPlot(Lizard, group.by = "cell_class")
+DotPlot(Lizard, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Cone_markers, Rod_markers, MG_markers, Other_markers), group.by = "cell_class") + RotatedAxis()
+counts <- table(Lizard@meta.data$cell_class, Lizard@meta.data$orig.file)
+counts
+saveRDS(Lizard, "../Species_Initial/Lizard_initial.rds")
+saveRDS(Lizard@meta.data, "../Metadata/Lizard_metadata.rds")
+
+```
+
+### Refine photoreceptors
+```{r}
+Lizard <- readRDS("../Species_Initial/Lizard_initial.rds")
+Idents(Lizard) <- "cell_class"
+PR <- subset(Lizard, idents = c("Rod", "Cone"))
+DefaultAssay(PR) <- "RNA"
+PR <- ClusterSeurat(PR)
+DotPlot(PR, features = toupper(Rod_markers)) + RotatedAxis()
+Rods <- WhichCells(PR, idents = 14)
+PR_cells <- colnames(PR)
+
+Lizard@meta.data[PR_cells, "cell_class"] <- "Cone"
+Lizard@meta.data[Rods, "cell_class"] <- "Rod"
+
+saveRDS(Lizard@meta.data, "../Metadata/Lizard_metadata.rds")
+saveRDS(Lizard, "../Species_Initial/Lizard_initial.rds")
+```
+
+## RGC clustering analysis
+Create separate RGC object
+```{r}
+Lizard <- readRDS("../Species_Initial//Lizard_initial.rds")
+
+
+# Only keep RGCs
+Idents(Lizard) <- "cell_class"
+Lizard_RGC <- subset(Lizard, cells = WhichCells(Lizard, idents ="RGC"))
+
+# Remove cells with low and high counts or features
+VlnPlot(Lizard_RGC, "nCount_RNA", group.by = "orig.file", pt.size = .1)
+VlnPlot(Lizard_RGC, "nFeature_RNA", group.by = "orig.file", pt.size = .1)
+
+```
+```{r}
+Lizard_RGC <- subset(Lizard_RGC, subset = nFeature_RNA > 500 & nCount_RNA < 10000)
+Lizard_RGC <- subset(Lizard_RGC, subset = (orig.file == "LizardNEUNpos") | (orig.file == "LizNueun1") | (orig.file == "LizNueun2") | (orig.file == "S14_Anole"))
+
+
+
+saveRDS(Lizard_RGC, file = "../Species_Objects/LizardRGC_v2.rds")
+```
+
+### Run clustering pipeline
+
+```{r}
+Lizard_RGC <- ClusterSeurat(Lizard_RGC, integrate.by = "orig.file", numPCs = 20)
+```
+
+### Visualize initial clusters
+```{r}
+# Lizard_RGC <- readRDS("~/Species_Objects/LizardRGC_integrated_v1.rds")
+DimPlot(Lizard_RGC, label = TRUE)
+DimPlot(Lizard_RGC, group.by = "orig.file", cells = sample(colnames(Lizard_RGC)))
+VlnPlot(Lizard_RGC, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(Lizard_RGC, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+```
+
+Examine markers for suspicious clusters. There don't appear to be contaminant clusters.
+```{r}
+DotPlot(Lizard_RGC, features = tolower(RGC_markers), assay = "RNA") + RotatedAxis()
+
+DotPlot(Lizard_RGC, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Cone_markers, Rod_markers, MG_markers, Other_markers), assay = "RNA") + RotatedAxis()
+```
+
+
+
+### Refine Clusters
+```{r}
+DefaultAssay(Lizard_RGC) <- "integrated"
+
+Lizard_RGC <- FindClusters(Lizard_RGC, resolution = 1.4)
+
+DimPlot(Lizard_RGC, label = TRUE, group.by = "integrated_snn_res.0.5")
+DimPlot(Lizard_RGC, label = TRUE, group.by = "integrated_snn_res.0.8")
+DimPlot(Lizard_RGC, label = TRUE, group.by = "integrated_snn_res.1.1")
+DimPlot(Lizard_RGC, label = TRUE, group.by = "integrated_snn_res.1.4")
+
+```
+Proceed with resolution of 0.8 Determine if any clusters need to be merged.
+
+
+```{r}
+DefaultAssay(Lizard_RGC) <- "RNA"
+
+Lizard_RGC@meta.data$seurat_clusters <- Lizard_RGC@meta.data$integrated_snn_res.0.8
+Idents(Lizard_RGC) <- "seurat_clusters"
+
+
+# 2 and 3: merge
+Lizard_RGC <- MergeClusters(Lizard_RGC, idents = c(3,2), refactor = TRUE)
+
+
+
+ident.1 = 2
+ident.2 = 3
+mark_dif <- FindMarkers(Lizard_RGC, ident.1 = ident.1, ident.2 = ident.2)
+mark_dif <- mark_dif[order(mark_dif$avg_log2FC),]
+
+DotPlot(Lizard_RGC, idents = c(ident.1, ident.2), features = c(head(rownames(mark_dif)), tail(rownames(mark_dif)))) + RotatedAxis()
+
+mark.1 <- FindMarkers(Lizard_RGC, ident.1 = ident.1, max.cells.per.ident = 1000)
+mark.2 <- FindMarkers(Lizard_RGC, ident.1 = ident.2, max.cells.per.ident = 1000)
+DotPlot(Lizard_RGC, features = unique(c(head(rownames(mark.1)), head(rownames(mark.2))))) + RotatedAxis()
+```
+
+### Summary Plots
+```{r}
+Lizard_RGC@meta.data$type <- Lizard_RGC@meta.data$seurat_clusters
+DimPlot(Lizard_RGC, label = TRUE, group.by = "type")
+```
+
+```{r}
+Lizard_markers <- FindAllMarkers(Lizard_RGC, only.pos = TRUE, max.cells.per.ident = 1000)
+
+Lizard_RGC <- DendroOrder(Lizard_RGC)
+Idents(Lizard_RGC) <- "type"
+
+PlotUniqueMarkers(Lizard_RGC, Lizard_markers)
+
+DotPlot(Lizard_RGC, features = TopMarkers(Lizard_markers, num_markers = 2), group.by = "type") + RotatedAxis()
+
+
+```
+
+```{r}
+DefaultAssay(Lizard_RGC) <- "RNA"
+Idents(Lizard_RGC) <- "type"
+saveRDS(Lizard_RGC, "../Species_Objects/LizardRGC_int_v2.rds")
+
+```
+
+
+## BC clustering analysis
+```{r}
+Lizard <- readRDS("../Species_Objects/Lizard_initial.rds")
+
+# Only keep BCs
+Idents(Lizard) <- "cell_class"
+Lizard_BC <- subset(Lizard, cells = WhichCells(Lizard, idents ="BP"))
+
+# Remove cells with low and high counts or features
+VlnPlot(Lizard_BC, "nCount_RNA", group.by = "orig.file", pt.size = .1)
+VlnPlot(Lizard_BC, "nFeature_RNA", group.by = "orig.file", pt.size = .1)
+
+
+```
+
+```{r}
+# Remove cells from NEUNpos due to low number
+Lizard_BC <- subset(Lizard_BC, subset = (orig.file != "LizardNEUNpos"))
+
+
+saveRDS(Lizard_BC, file = "../Species_Objects/LizardBC_v1.rds")
+LizBC <- readRDS("../Species_Objects/LizardBC_integrated_v1.rds")
+```
+
+### Run clustering pipeline
+
+```{r}
+Lizard_BC <- readRDS(file = "../Species_Objects/LizardBC_v1.rds")
+
+Lizard_BC <- ClusterSeurat(Lizard_BC, integrate.by = "orig.file", numPCs = 20)
+```
+
+### Visualize initial clusters
+```{r}
+DimPlot(Lizard_BC, label = TRUE)
+DimPlot(Lizard_BC, group.by = "orig.file", cells = sample(colnames(Lizard_BC)))
+VlnPlot(Lizard_BC, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(Lizard_BC, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+```
+
+
+Examine markers for suspicious clusters. 
+```{r}
+DotPlot(Lizard_BC, features = tolower(BC_markers), assay = "RNA") + RotatedAxis()
+
+DotPlot(Lizard_BC, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Cone_markers, Rod_markers, MG_markers, Other_markers), assay = "RNA") + RotatedAxis()
+```
+
+### Refine Clusters
+Remove cluster 0 since it doesn't express BC markers and has low counts
+```{r}
+Lizard_BC <- DropClusters(Lizard_BC, idents = 0)
+```
+
+Increase cluster resolution. Stick with 0.8
+```{r}
+DefaultAssay(Lizard_BC) <- "integrated"
+
+numPCs <- 20
+Lizard_BC <- FindNeighbors(Lizard_BC, dims = 1:numPCs)
+Lizard_BC <- FindClusters(Lizard_BC, resolution = 0.8)
+Lizard_BC <- RunUMAP(Lizard_BC, dims = 1:numPCs)
+
+DimPlot(Lizard_BC, label = TRUE)
+```
+
+```{r}
+DefaultAssay(Lizard_BC) <- "RNA"
+Lizard_BC <- DendroOrder(Lizard_BC)
+
+pan_BC <- tolower(c("VSX2", "CABP5", "OTX2"))
+Rod <- tolower(c("PRKCA", "GRAMD1B"))
+Cone <- tolower(c("SLC24A3", "APBA2B"))
+
+Off <- tolower(c("GRIK1"))
+On <- tolower(c("GRM6", "ISL1"))
+
+DotPlot(Lizard_BC, features = c(pan_BC, Rod, Cone, Off, On), group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+
+Lizard_BC@meta.data$on_off <- factor(Lizard_BC@meta.data$seurat_clusters, levels = rev(c(4,8,3,6,7,10,11,13,15, 0, 1,2,5,9,12,14,16)))
+
+DotPlot(Lizard_BC, features = c(pan_BC, Rod, Cone, Off, On), group.by = "on_off", assay = "RNA") + RotatedAxis()
+
+
+
+```
+
+Check for my cone markers
+```{r}
+Mouse_BC <- readRDS("../Species_Objects/MouseBC_int_ann_v3.rds")
+Idents(Mouse_BC) <- "annotated"
+DefaultAssay(Mouse_BC) <- "RNA"
+rod_markers <- FindMarkers(Mouse_BC, ident.1 = "RBC")
+rod_markers <- rod_markers[order(rod_markers$avg_log2FC),]
+DotPlot(Mouse_BC, features = head(rownames(rod_markers), 20)) + RotatedAxis()
+
+DotPlot(Lizard_BC, features = tolower(head(rownames(rod_markers), 20)), group.by = "on_off", assay = "RNA") + RotatedAxis()
+
+
+```
+
+```{r}
+Lizard_BC@meta.data$type <- Lizard_BC@meta.data$seurat_clusters
+Idents(Lizard_BC) <- "type"
+DefaultAssay(Lizard_BC) <- "RNA"
+saveRDS(Lizard_BC, "../Species_Objects/LizardBC_integrated_v1.rds")
+```
+
+### Second RB type
+```{r}
+Zfish_BC <- readRDS("../Species_Objects/ZebrafishBC_v3.rds")
+Lizard_BC <- readRDS("../Species_Objects/LizardBC_integrated_v1.rds")
+
+
+pan_BC <- c("VSX1", "CABP5A")
+Rod <- c("PRKCA", "GRAMD1B")
+Cone <- c("SLC24A3", "APBA2B")
+Off <- c("GRIK1A", "GRIK1B")
+On <- c("GRM6A","GRM6B", "ISL1", "GNB3A")
+
+# Cluster 19 in zebrafish is second RB type
+R2_markers <- FindMarkers(Zfish_BC, ident.1 = 19)
+DotPlot(Zfish_BC, features = head(rownames(R2_markers)), assay = "RNA", group.by = "bipolar_order") + RotatedAxis()
+
+DotPlot(Lizard_BC, features = tolower(head(rownames(R2_markers))), assay = "RNA", group.by = "on_off") + RotatedAxis()
+
+
+```
+
+```{r}
+Mouse_BC <- readRDS("../Species_Objects/MouseBC_int_ann_v3.rds")
+
+Idents(Mouse_BC) <- "annotated"
+RB_markers <- FindMarkers(Mouse_BC, ident.1 = "RBC")
+RB_markers <- RB_markers[order(RB_markers$avg_log2FC), ]
+
+
+DotPlot(Mouse_BC, features = head(rownames(RB_markers), 20), assay = "RNA", group.by = "annotated") + RotatedAxis()
+
+DotPlot(Lizard_BC, features = tolower(head(rownames(RB_markers), 20)), assay = "RNA", group.by = "on_off") + RotatedAxis()
+
+DotPlot(Mouse_BC, features = tail(rownames(RB_markers), 20), assay = "RNA", group.by = "annotated") + RotatedAxis()
+
+DotPlot(Lizard_BC, features = tolower(tail(rownames(RB_markers), 20)), assay = "RNA", group.by = "on_off") + RotatedAxis()
+
+
+
+
+```
+
+
+#Photoreceptors
+```{r}
+Lizard <- readRDS("../Species_Initial/Lizard_initial.rds")
+Idents(Lizard) <- "cell_class"
+Lizard_PR <- subset(Lizard, cells = WhichCells(Lizard, idents = c("Rod", "Cone")))
+
+VlnPlot(Lizard_PR, "nCount_RNA", group.by = "orig.file", pt.size = .1)
+VlnPlot(Lizard_PR, "nFeature_RNA", group.by = "orig.file", pt.size = .1)
+
+Lizard_PR <- subset(Lizard_PR, orig.file %in% c("LizardNEUNneg",  "LizardNEUNpos",  "LizChx10", "S14_Anole"))
+Lizard_PR <- ClusterSeurat(Lizard_PR,  numPCs = 20, integrate.by = "orig.file")
+saveRDS(Lizard_PR, "../Species_Objects/LizardPR_int_v1.rds")
+
+DimPlot(Lizard_PR, label = TRUE)
+DimPlot(Lizard_PR, group.by = "orig.file", cells = sample(colnames(Lizard_PR)))
+VlnPlot(Lizard_PR, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(Lizard_PR, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+
+DotPlot(Lizard_PR, features = toupper(Rod_markers), assay = "RNA") + RotatedAxis()
+DotPlot(Lizard_PR, features = toupper(Cone_markers), assay = "RNA") + RotatedAxis()
+DotPlot(Lizard_PR, features = toupper(c(RGC_markers, BC_markers, AC_markers, HC_markers, Cone_markers, Rod_markers, MG_markers, "OPN1SW", "OPN1LW", "OPN")), assay = "RNA") + RotatedAxis()
+```
+
+#HC
+```{r}
+Idents(Lizard) <- "cell_class"
+Lizard_HC <- subset(Lizard, cells = WhichCells(Lizard, idents = "HC"))
+
+VlnPlot(Lizard_HC, "nCount_RNA", group.by = "orig.file", pt.size = .1)
+VlnPlot(Lizard_HC, "nFeature_RNA", group.by = "orig.file", pt.size = .1)
+
+Lizard_HC <- subset(Lizard_HC, orig.file %in% c("LizardNEUNneg", "LizChx10", "S14_Anole"))
+Lizard_HC <- ClusterSeurat(Lizard_HC,  numPCs = 20, integrate.by = "orig.file")
+saveRDS(Lizard_HC, "../Species_Objects/LizardHC_int_v1.rds")
+
+DimPlot(Lizard_HC, label = TRUE)
+DimPlot(Lizard_HC, group.by = "orig.file", cells = sample(colnames(Lizard_HC)))
+VlnPlot(Lizard_HC, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(Lizard_HC, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+
+DotPlot(Lizard_HC, features = toupper(HC_markers), assay = "RNA") + RotatedAxis()
+DotPlot(Lizard_HC, features = toupper(c(RGC_markers, BC_markers, AC_markers, HC_markers, Cone_markers, Rod_markers, MG_markers, Other_markers, "ISL1")), assay = "RNA") + RotatedAxis()
+```
+

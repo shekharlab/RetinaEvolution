@@ -1,0 +1,1251 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# Load libraries
+```{r}
+library(tidyverse)
+# library(ggtree)
+# library(velocyto.R)
+library(Seurat)
+library(ggplot2)
+library(cowplot)
+source("../utils/utilFxns.R")
+source("../utils/plottingFxns.R")
+```
+
+# All data
+## Load loom files
+```{r}
+data_dir <- "/Users/joshhahn/Google Drive File Stream/My Drive/shekharlab_data/projects/Marmoset/Processed/Adult_MarmosetS1/"
+FoveaS1 <- read.loom.matrices(file = paste0(data_dir, "Marmoset1FoveaS1/velo_outs/possorted_genome_bam_EXKMG.loom"), engine = "hdf5r")
+FoveaS2 <- read.loom.matrices(file = paste0(data_dir, "Marmoset1FoveaS2/velo_outs/possorted_genome_bam_WMHOD.loom"), engine = "hdf5r")
+FoveaS3 <- read.loom.matrices(file = paste0(data_dir, "Marmoset1FoveaS3/velo_outs/possorted_genome_bam_DDSDK.loom"), engine = "hdf5r")
+
+data_dir <- "/Users/joshhahn/Google Drive File Stream/My Drive/shekharlab_data/projects/Marmoset/Processed/190306_HWTLJCCXY/"
+Fovea2S1 <- read.loom.matrices(file = paste0(data_dir, "AdultmarmosetFovea2S1/velo_outs/possorted_genome_bam_H1S3U.loom"), engine = "hdf5r")
+Fovea2S2 <- read.loom.matrices(file = paste0(data_dir, "AdultmarmosetFovea2S2/velo_outs/possorted_genome_bam_K564P.loom"), engine = "hdf5r")
+Per1CD73dpS1 <- read.loom.matrices(file = paste0(data_dir, "AdultmarmosetPer1CD73dpS1/velo_outs/possorted_genome_bam_E9A5U.loom"), engine = "hdf5r")
+Per1CD73dpS2 <- read.loom.matrices(file = paste0(data_dir, "AdultmarmosetPer1CD73dpS2/velo_outs/possorted_genome_bam_E3NCR.loom"), engine = "hdf5r")
+Per1CD90S1 <- read.loom.matrices(file = paste0(data_dir, "AdultmarmosetPer1CD90S1/velo_outs/possorted_genome_bam_Y0CGQ.loom"), engine = "hdf5r")
+
+```
+
+Generate count matrices by adding intronic and exonic reads
+```{r}
+FoveaS1_mat = FoveaS1$spliced + FoveaS1$unspliced
+FoveaS2_mat = FoveaS2$spliced + FoveaS2$unspliced
+FoveaS3_mat = FoveaS3$spliced + FoveaS3$unspliced
+
+Fovea2S1_mat = Fovea2S1$spliced + Fovea2S1$unspliced
+Fovea2S2_mat = Fovea2S2$spliced + Fovea2S2$unspliced
+
+CD73S1_mat = Per1CD73dpS1$spliced + Per1CD73dpS1$unspliced
+CD73S2_mat = Per1CD73dpS2$spliced + Per1CD73dpS2$unspliced
+CD90S1_mat = Per1CD90S1$spliced + Per1CD90S1$unspliced
+
+Marmoset_mat <- cbind(FoveaS1_mat, FoveaS2_mat, FoveaS3_mat, Fovea2S1_mat, Fovea2S2_mat, CD73S1_mat, CD73S2_mat, CD90S1_mat)
+```
+
+## Create Seurat object and set file information
+```{r}
+Marmoset <- CreateSeuratObject(Marmoset_mat, names.delim = ":")
+
+Marmoset@meta.data[colnames(FoveaS1_mat), 'orig.file'] = "Marmoset1FoveaS1"
+Marmoset@meta.data[colnames(FoveaS2_mat), 'orig.file'] = "Marmoset1FoveaS2"
+Marmoset@meta.data[colnames(FoveaS3_mat), 'orig.file'] = "Marmoset1FoveaS3"
+Marmoset@meta.data[colnames(Fovea2S1_mat), 'orig.file'] = "AdultmarmosetFovea2S1"
+Marmoset@meta.data[colnames(Fovea2S2_mat), 'orig.file'] = "AdultmarmosetFovea2S2"
+Marmoset@meta.data[colnames(CD73S1_mat), 'orig.file'] = "AdultmarmosetPer1CD73dpS1"
+Marmoset@meta.data[colnames(CD73S2_mat), 'orig.file'] = "AdultmarmosetPer1CD73dpS2"
+Marmoset@meta.data[colnames(CD90S1_mat), 'orig.file'] = "AdultmarmosetPer1CD90S1"
+
+Marmoset@meta.data[colnames(FoveaS1_mat), 'animal'] = 1
+Marmoset@meta.data[colnames(FoveaS2_mat), 'animal'] = 1
+Marmoset@meta.data[colnames(FoveaS3_mat), 'animal'] = 1
+Marmoset@meta.data[colnames(Fovea2S1_mat), 'animal'] = 2
+Marmoset@meta.data[colnames(Fovea2S2_mat), 'animal'] = 2
+Marmoset@meta.data[colnames(CD73S1_mat), 'animal'] = 3
+Marmoset@meta.data[colnames(CD73S2_mat), 'animal'] = 3
+Marmoset@meta.data[colnames(CD90S1_mat), 'animal'] = 3
+
+saveRDS(Marmoset, "../Species_Objects/Marmoset_initial.rds")
+```
+
+```{r}
+VlnPlot(Marmoset, features = "nCount_RNA", pt.size = 0)
+VlnPlot(Marmoset, features = "nFeature_RNA", pt.size = 0)
+```
+
+
+## Cell class annotation
+```{r}
+Marmoset <- ClusterSeurat(Marmoset)
+# Marmoset <- NormalizeData(Marmoset, normalization.method = "LogNormalize", scale.factor = 10000)
+# Marmoset <- FindVariableFeatures(Marmoset, selection.method = "vst")
+# Marmoset <- ScaleData(Marmoset)
+# Marmoset <- RunPCA(Marmoset)
+# Marmoset <- FindNeighbors(Marmoset, dims = 1:30)
+Marmoset <- FindClusters(Marmoset, resolution = .3)
+# Marmoset <- RunUMAP(Marmoset, dims = 1:30)
+  
+saveRDS(Marmoset, file = "../Species_Objects/Marmoset_initial.rds")
+```
+
+Visualize initial clusters
+```{r}
+Marmoset <- readRDS("../Species_Objects/Marmoset_initial.rds")
+DimPlot(Marmoset, label = TRUE)
+DimPlot(Marmoset, group.by = "orig.file", cells = sample(colnames(Marmoset)))
+DimPlot(Marmoset, group.by = "animal", cells = sample(colnames(Marmoset)))
+VlnPlot(Marmoset, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(Marmoset, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+```
+
+Look for major retinal cell classes
+```{r}
+Marmoset <- DendroOrder(Marmoset)
+Marmoset <- UpperCase_genes(Marmoset)
+
+RGC_markers= c("RBPMS", "SLC17A6", "POU6F2")
+BC_markers=c("VSX2", "CABP5", "GRIK1", "OTX2", "PRKCA")
+AC_markers=c("TFAP2A","GAD1", "GAD2", "SLC6A9")
+HC_markers=c("ONECUT1", "LHX1", "CALB1", "TPM3")
+Cone_markers=c("PDE6H", "CRX")
+Rod_markers=c("SAG", "PDC", "RHO", "ARR3")
+MG_markers=c("SLC1A3","RLBP1", "GLUL", "APOE")
+Other_markers = c("FN1", "GSN","CLDN5","RGS5")
+
+DotPlot(Marmoset, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Cone_markers, Rod_markers, MG_markers, Other_markers), group.by = "dendro_order") + RotatedAxis()
+```
+
+Annotate clusters using DE genes and Dot plot of marker genes
+```{r}
+Idents(Marmoset) <- "seurat_clusters"
+Marmoset_genes <- FindAllMarkers(Marmoset)
+saveRDS(Marmoset_genes, file = "../Marker_Genes/Marmoset_genes_initial.rds")
+```
+
+```{r}
+Marmoset@meta.data$cell_class = "Other"
+
+Marmoset@meta.data[WhichCells(Marmoset, idents =c(19,49,38,33,40,22,35,5,7,24,28)),]$cell_class = "RGC"
+Marmoset@meta.data[WhichCells(Marmoset, idents = c(8,13,54,29,9,4,43,53,26,31,0,56,2,37,47,51)),]$cell_class = "BP"
+Marmoset@meta.data[WhichCells(Marmoset, idents = c(11,30,17,32,42,20,36,48)),]$cell_class = "GabaAC"
+Marmoset@meta.data[WhichCells(Marmoset, idents = c(23,39)),]$cell_class = "GlyAC"
+
+Marmoset@meta.data[WhichCells(Marmoset, idents = c(10,52)),]$cell_class = "HC"
+Marmoset@meta.data[WhichCells(Marmoset, idents = c(25,27)),]$cell_class = "Rod"
+Marmoset@meta.data[WhichCells(Marmoset, idents = c(34,15,16)),]$cell_class = "Cone"
+
+Marmoset@meta.data[WhichCells(Marmoset, idents = c(12,18,3,45,44,55,1)),]$cell_class = "MG"
+Marmoset@meta.data[WhichCells(Marmoset, idents = 41),]$cell_class = "MicroG"
+
+Marmoset@meta.data[WhichCells(Marmoset, idents = c(6,14,21,27,46,50)),]$cell_class = "Other"
+
+DimPlot(Marmoset, group.by = "cell_class")
+DimPlot(Marmoset, label = TRUE)
+
+
+saveRDS(Marmoset, "../Species_Objects/Marmoset_initial.rds")
+Marmoset <- readRDS("../Species_Objects/Marmoset_initial.rds")
+
+```
+
+Investigate unmarked clusters to see if they have any unique markers
+```{r}
+# 15, 16 - PR: ARR3
+M15_markers <- FindMarkers(Marmoset, ident.1 = "15")
+M16_markers <- FindMarkers(Marmoset, ident.1 = "16")
+head(M15_markers, 20)
+# 48 - AC: lacking RGC markers, expresses more AC markers
+M48_markers <- FindMarkers(Marmoset, ident.1 = "48")
+head(M48_markers, 20)
+# 52 - HC: ONECUT
+M52_markers <- FindMarkers(Marmoset, ident.1 = "52")
+head(M52_markers, 20)
+# 2 - BC: TRPM1
+# 37 - BC: VSX1, TRPM1
+# 47 - BC: proximity to other BC clusters, lack of other markers for different classes
+M47_markers <- FindMarkers(Marmoset, ident.1 = "47")
+M2_markers <- FindMarkers(Marmoset, ident.1 = "2")
+M37_markers <- FindMarkers(Marmoset, ident.1 = "37")
+head(M47_markers, 20)
+# 39 - AC: TFAP2B
+M39_markers <- FindMarkers(Marmoset, ident.1 = "39")
+head(M39_markers, 20)
+# 23 - AC: proximity to other AC markers, lack of other markers
+M23_markers <- FindMarkers(Marmoset, ident.1 = "23")
+head(M23_markers, 20)
+#51 - BC : TRPM1
+M51_markers <- FindMarkers(Marmoset, ident.1 = "51")
+head(M51_markers, 20)
+
+```
+
+
+Plot cell type by file
+```{r}
+Marmoset <- readRDS("../Species_Objects/Marmoset_initial.rds")
+
+pdf("../Figures/MarmosetUMAP.pdf", w=5, h=4, useDingbats = FALSE)
+DimPlot(Marmoset, group.by = "cell_class", cols = c("red","orange","gray", "green","blue","black", "purple", "plum")) + ggtitle("Marmoset")
+dev.off()
+
+counts <- table(Marmoset@meta.data$cell_class, Marmoset@meta.data$orig.file)
+counts
+counts <- t(t(counts) / colSums(counts))
+barplot(counts, legend = rownames(counts), col= c("red","orange","yellow","green","blue", "black", "white"))
+```
+
+
+# RGCs
+Create initial object
+```{r}
+Marmoset <- readRDS("../Species_Objects/Marmoset_initial.rds")
+
+# Only keep RGCs
+Idents(Marmoset) <- "cell_class"
+Marmoset_RGC <- subset(Marmoset, cells = WhichCells(Marmoset, idents ="RGC"))
+rm(Marmoset)
+
+# Remove cells from samples that do not enrich for RGCs
+Idents(Marmoset_RGC) <- "orig.file"
+Marmoset_RGC <- subset(Marmoset_RGC, cells = setdiff(colnames(Marmoset_RGC), WhichCells(Marmoset_RGC, idents =c("AdultmarmosetPer1CD73dpS1", "AdultmarmosetPer1CD73dpS2"))))
+
+VlnPlot(Marmoset_RGC, "nCount_RNA", group.by = "orig.file", pt.size = 0)
+VlnPlot(Marmoset_RGC, "nFeature_RNA", group.by = "orig.file", pt.size = 0)
+
+Marmoset_RGC <- subset(Marmoset_RGC, nFeature_RNA > 50 & nCount_RNA < 20000)
+
+saveRDS(Marmoset_RGC, file = "../Species_Objects/MarmosetRGC_v1.rds")
+```
+
+
+Cluster RGCs, batch correct by file
+```{r}
+# Perform integration - integrate by file
+obj.list <- SplitObject(Marmoset_RGC, split.by = "orig.file")
+for (i in 1:length(obj.list)) {
+      obj.list[[i]] <- NormalizeData(obj.list[[i]], verbose = FALSE)
+      obj.list[[i]] <- FindVariableFeatures(obj.list[[i]], selection.method = "vst", nfeatures = 2000, verbose = FALSE)
+}
+obj.anchors <- FindIntegrationAnchors(object.list = obj.list)
+Marmoset_RGC <- IntegrateData(anchorset = obj.anchors)
+DefaultAssay(Marmoset_RGC) <- "integrated"
+
+Marmoset_RGC <- ScaleData(Marmoset_RGC, verbose = FALSE)
+Marmoset_RGC <- RunPCA(Marmoset_RGC, npcs = 30, verbose = FALSE)
+ElbowPlot(Marmoset_RGC, ndims = 30)  
+
+# 20 PCs seems to suffciently capture the data
+nPCs <- 20
+Marmoset_RGC <- FindNeighbors(Marmoset_RGC, dims = 1:nPCs)
+# Start with a resolution parameter of 
+Marmoset_RGC <- FindClusters(Marmoset_RGC, resolution = .8)
+Marmoset_RGC <- RunTSNE(Marmoset_RGC, dims = 1:nPCs)
+Marmoset_RGC <- RunUMAP(Marmoset_RGC, dims = 1:nPCs)
+
+saveRDS(Marmoset_RGC, "~/Species_Objects/MarmosetRGC_integrated_v1.rds")
+
+```
+
+### Visualize initial clusters
+```{r}
+Marmoset_RGC <- readRDS("../Species_Objects/MarmosetRGC_integrated_v1.rds")
+Idents(Marmoset_RGC) <- "seurat_clusters"
+DimPlot(Marmoset_RGC, label = TRUE)
+DimPlot(Marmoset_RGC, group.by = "orig.file", cells = sample(colnames(Marmoset_RGC)))
+VlnPlot(Marmoset_RGC, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(Marmoset_RGC, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+DotPlot(Marmoset_RGC, features = c("RBPMS", "SLC17A6", "THY1"), assay = "RNA")
+```
+
+Calculate DE markers using the Wilcoxon test to determine if clusters need to be merged
+```{r}
+Idents(Marmoset_RGC) <- "seurat_clusters"
+MarmosetRGC_markers <- FindAllMarkers(Marmoset_RGC, assay = "RNA", only.pos = TRUE)
+saveRDS(MarmosetRGC_markers, "../Species_Markers/MarmosetRGCMarkers_v1.rds")
+```
+
+Plot top markers for each cluster, arranged by a dendrogram
+```{r}
+#MarmosetRGC_markers <- readRDS("../Species_Markers/MarmosetRGCMarkers_v1.rds")
+#Marmoset_RGC <- readRDS("../Species_Objects/MarmosetRGC_integrated_v1.rds")
+Marmoset_RGC <- DendroOrder(Marmoset_RGC)
+
+Idents(Marmoset_RGC) <- "dendro_order"
+top_markers <- TopMarkers(Marmoset_RGC, markers = MarmosetRGC_markers, num_markers = 2)
+
+DotPlot(Marmoset_RGC, features = top_markers, assay = "RNA", group.by = "dendro_order") + RotatedAxis()
+```
+
+### Remove contaminant clusters
+```{r}
+# 3 and 6: remove, since they do not have DE genes and have low counts overall
+DotPlot(Marmoset_RGC, features = head(subset(MarmosetRGC_markers, cluster == 3),10)$gene, group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+DotPlot(Marmoset_RGC, features = head(rownames(FindMarkers(Marmoset_RGC, ident.1 = 3, ident.2 = 6)),10), group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+
+Marmoset_RGC <- DropClusters(Marmoset_RGC, idents = c(3,6), refactor = FALSE)
+
+# 17 - amacrine cell, remove
+DotPlot(Marmoset_RGC, features = head(subset(MarmosetRGC_markers, cluster == 17),10)$gene, group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+Marmoset_RGC <- DropClusters(Marmoset_RGC, idents = c(17), refactor = FALSE)
+
+# 2 and 8: remove, since they do not have DE genes and have low counts overall
+DotPlot(Marmoset_RGC, features = head(subset(MarmosetRGC_markers, cluster == 2),10)$gene, group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+
+Marmoset_RGC <- DropClusters(Marmoset_RGC, idents = c(2,8), refactor = FALSE)
+
+# 14
+DotPlot(Marmoset_RGC, features = head(subset(MarmosetRGC_markers, cluster == 14),10)$gene, group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+
+# 0 and 1 - keep as separate
+DotPlot(Marmoset_RGC, features = head(subset(MarmosetRGC_markers, cluster == 1),10)$gene, group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+DotPlot(Marmoset_RGC, features = head(rownames(FindMarkers(Marmoset_RGC, ident.1 = 0, ident.2 = 1)),10), group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+```
+
+Since a large portion of cells were removed, recluster
+```{r}
+Marmoset_RGC <- FindVariableFeatures(Marmoset_RGC, selection.method = "vst", nfeatures = 2000, verbose = FALSE)
+Marmoset_RGC <- ScaleData(Marmoset_RGC, verbose = FALSE)
+Marmoset_RGC <- RunPCA(Marmoset_RGC, npcs = 30, verbose = FALSE)
+nPCs <- 20
+Marmoset_RGC <- FindNeighbors(Marmoset_RGC, dims = 1:nPCs)
+# Use resolution parameter of .8
+Marmoset_RGC <- FindClusters(Marmoset_RGC, resolution = .8)
+Marmoset_RGC <- RunTSNE(Marmoset_RGC, dims = 1:nPCs)
+Marmoset_RGC <- RunUMAP(Marmoset_RGC, dims = 1:nPCs)
+
+saveRDS(Marmoset_RGC, "../Species_Objects/MarmosetRGC_integrated_v2.rds")
+```
+
+### Visualize new clusters
+```{r}
+Marmoset_RGC <- readRDS("../Species_Objects/MarmosetRGC_integrated_v2.rds")
+Idents(Marmoset_RGC) <- "seurat_clusters"
+DimPlot(Marmoset_RGC, label = TRUE)
+DimPlot(Marmoset_RGC, group.by = "orig.file", cells = sample(colnames(Marmoset_RGC)))
+VlnPlot(Marmoset_RGC, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(Marmoset_RGC, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+DotPlot(Marmoset_RGC, features = c("RBPMS", "SLC17A6", "THY1"), assay = "RNA")
+```
+
+Calculate DE markers using the Wilcoxon test to determine if clusters need to be merged again
+```{r}
+Idents(Marmoset_RGC) <- "seurat_clusters"
+MarmosetRGC_markers <- FindAllMarkers(Marmoset_RGC, assay = "RNA", only.pos = TRUE)
+saveRDS(MarmosetRGC_markers, "../Species_Markers/MarmosetRGCMarkers_v2.rds")
+```
+
+Plot top markers for each cluster, arranged by a dendrogram
+```{r}
+MarmosetRGC_markers <- readRDS("../Species_Markers/MarmosetRGCMarkers_v2.rds")
+Marmoset_RGC <- readRDS("../Species_Objects/MarmosetRGC_integrated_v2.rds")
+Marmoset_RGC <- DendroOrder(Marmoset_RGC)
+
+Idents(Marmoset_RGC) <- "dendro_order"
+MarmosetRGC_markers <- FindAllMarkers(Marmoset_RGC, assay = "RNA", only.pos = TRUE)
+
+top_markers <- TopMarkers(Marmoset_RGC, markers = MarmosetRGC_markers, num_markers = 2)
+DotPlot(Marmoset_RGC, features = top_markers, assay = "RNA", group.by = "dendro_order") + RotatedAxis()
+```
+
+### Merge clusters and remove contaminant clusters
+```{r}
+Marmoset_RGC <- readRDS("../Species_Objects/MarmosetRGC_integrated_v2.rds")
+
+# 0, 23, 25 - keep as separate for now
+markers <- c(head(subset(MarmosetRGC_markers, cluster == 0),10)$gene, 
+             head(subset(MarmosetRGC_markers, cluster == 23),10)$gene,
+             head(subset(MarmosetRGC_markers, cluster == 25),10)$gene)
+DotPlot(Marmoset_RGC, features = markers, assay = "RNA", idents = c(0, 23, 25)) + RotatedAxis()
+
+
+# 3,5,6 - keep as separate for now
+markers <- unique(c(head(subset(MarmosetRGC_markers, cluster == 3),10)$gene, 
+             head(subset(MarmosetRGC_markers, cluster == 5),10)$gene,
+             head(subset(MarmosetRGC_markers, cluster == 6),10)$gene))
+DotPlot(Marmoset_RGC, features = markers, assay = "RNA", idents = c(3,5,6)) + RotatedAxis()
+
+markers5_6 <- FindMarkers(Marmoset_RGC, ident.1 = 5, ident.2 = 6)
+markers5_6$pct_dif <- markers5_6$pct.1 - markers5_6$pct.2
+markers5_6 <- markers5_6[order(markers5_6$pct_dif),]
+markers <- c(head(subset(MarmosetRGC_markers, cluster == 3),10)$gene,
+             head(rownames(markers5_6)), 
+             tail(rownames(markers5_6)))
+DotPlot(Marmoset_RGC, features = markers, assay = "RNA", idents = c(3,5,6)) + RotatedAxis()
+
+markers3_5 <- FindMarkers(Marmoset_RGC, ident.1 = 3, ident.2 = c(5,6))
+markers3_5$pct_dif <- markers3_5$pct.1 - markers3_5$pct.2
+markers3_5 <- markers3_5[order(markers3_5$pct_dif),]
+markers <- c( head(rownames(markers3_5)), tail(rownames(markers3_5)))
+DotPlot(Marmoset_RGC, features = markers, assay = "RNA", idents = c(3,5,6)) + RotatedAxis()
+
+# 2, 21, 26 - keep as separate for now
+markers <- unique(c(head(subset(MarmosetRGC_markers, cluster == 2),10)$gene, 
+             head(subset(MarmosetRGC_markers, cluster == 21),10)$gene,
+             head(subset(MarmosetRGC_markers, cluster == 26),10)$gene))
+DotPlot(Marmoset_RGC, features = markers, assay = "RNA", idents = c(2,21,26)) + RotatedAxis()
+
+# 20 and 24 : keep separate, 24 has unique markers
+DotPlot(Marmoset_RGC, features = head(subset(MarmosetRGC_markers, cluster == 20),10)$gene, group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+DotPlot(Marmoset_RGC, features = head(rownames(FindMarkers(Marmoset_RGC, ident.1 = 0, ident.2 = 1)),10), group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+
+saveRDS(Marmoset_RGC, "../Species_Objects/MarmosetRGC_integrated_v3.rds")
+Marmoset_RGC <- readRDS("../Species_Objects/MarmosetRGC_integrated_v3.rds")
+```
+
+Calculate DE genes using MAST
+```{r}
+# Marmoset_RGC <- readRDS("../Species_Objects/MarmosetRGC_integrated_v3.rds")
+Idents(Marmoset_RGC) <- "seurat_clusters"
+MarmosetRGC_markers <- FindAllMarkers(Marmoset_RGC, assay = "RNA", test.use = "MAST")
+saveRDS(MarmosetRGC_markers, "../Species_Markers/MarmosetRGCMarkers_v3.rds")
+
+```
+
+Convert UMAP and diagonal gene plots to files
+```{r}
+Marmoset_RGC <- readRDS("../Species_Objects/MarmosetRGC_integrated_v3.rds")
+RGC_markers <- readRDS()
+
+pdf("../Figures/Species_UMAPs/MarmosetRGC.pdf", w=4, h=4, useDingbats = FALSE)
+DimPlot(Marmoset_RGC, label = TRUE, group.by = "seurat_clusters") + NoLegend()
+dev.off()
+
+markers <- PlotUniqueMarkers(Marmoset_RGC, RGC_markers, edits = TRUE)
+pdf("Figures/Species_MarkerPlots/MarmosetRGC.pdf", , w=6, h=4, useDingbats = FALSE)
+dev.off()
+```
+
+### Create separate peripheral and fovea objects
+```{r}
+Marmoset_RGC <- readRDS("../Species_Objects/MarmosetRGC_integrated_v3.rds")
+Idents(Marmoset_RGC) <- "orig.file"
+fovea_cells <- WhichCells(Marmoset_RGC, idents = c("Marmoset1FoveaS1", "Marmoset1FoveaS2", "Marmoset1FoveaS3", "AdultmarmosetFovea2S1", "AdultmarmosetFovea2S2"))
+periphery_cells <- setdiff(colnames(Marmoset_RGC), fovea_cells)
+
+Mar_fovea_RGC <- subset(Marmoset_RGC, cells = fovea_cells)
+saveRDS(Mar_fovea_RGC, "../Species_Objects/MarmosetRGC_fovea.rds")
+Mar_peri_RGC <- subset(Marmoset_RGC, cells = periphery_cells)
+saveRDS(Mar_peri_RGC, "../Species_Objects/MarmosetRGC_periphery.rds")
+```
+
+### Fovea Periphery Proportions
+```{r}
+Marmoset_RGC <- readRDS("../Species_Objects/MarmosetRGC_integrated_v3.rds")
+Marmoset_RGC@meta.data$fov_peri <- "Periphery"
+Idents(Marmoset_RGC) <- "orig.file"
+fovea_cells <- WhichCells(Marmoset_RGC, idents = c("Marmoset1FoveaS1", "Marmoset1FoveaS2", "Marmoset1FoveaS3", "AdultmarmosetFovea2S1", "AdultmarmosetFovea2S2"))
+Marmoset_RGC@meta.data[fovea_cells, "fov_peri"] <- "Fovea"
+
+data <- table(Marmoset_RGC@meta.data$fov_peri, Marmoset_RGC@meta.data$seurat_clusters)
+data <- as.data.frame(t(data / rowSums(data)))
+
+ggplot(data = data, aes(x=Var1, y=Freq, fill = Var2)) + 
+  geom_bar(stat="identity", position=position_dodge()) +
+  xlab("Cluster") +
+  ylab("Frequency") +
+  ggtitle("RGCs")
+
+```
+
+
+
+# BCs
+### Create initial object
+```{r}
+Marmoset <- readRDS("../Species_Objects/Marmoset_initial.rds")
+
+# Only keep BCs
+Idents(Marmoset) <- "cell_class"
+Marmoset_BC <- subset(Marmoset, cells = WhichCells(Marmoset, idents ="BC"))
+rm(Marmoset)
+
+# Remove cells from samples that do not enrich for BCs
+Idents(Marmoset_BC) <- "orig.file"
+Marmoset_BC <- subset(Marmoset_BC, cells = setdiff(colnames(Marmoset_BC), WhichCells(Marmoset_BC, idents =c("AdultmarmosetPer1CD90S1"))))
+
+VlnPlot(Marmoset_BC, "nCount_RNA", group.by = "orig.file", pt.size = 0)
+VlnPlot(Marmoset_BC, "nFeature_RNA", group.by = "orig.file", pt.size = 0)
+
+Marmoset_BC <- subset(Marmoset_BC, nFeature_RNA > 50 & nCount_RNA < 5000)
+
+saveRDS(Marmoset_BC, file = "../Species_Objects/MarmosetBC_v1.rds")
+```
+
+
+Cluster BCs, batch correct by file
+```{r}
+# Perform integration - integrate by file
+obj.list <- SplitObject(Marmoset_BC, split.by = "orig.file")
+for (i in 1:length(obj.list)) {
+      obj.list[[i]] <- NormalizeData(obj.list[[i]], verbose = FALSE)
+      obj.list[[i]] <- FindVariableFeatures(obj.list[[i]], selection.method = "vst", nfeatures = 2000, verbose = FALSE)
+}
+obj.anchors <- FindIntegrationAnchors(object.list = obj.list)
+Marmoset_BC <- IntegrateData(anchorset = obj.anchors)
+DefaultAssay(Marmoset_BC) <- "integrated"
+
+Marmoset_BC <- ScaleData(Marmoset_BC, verbose = FALSE)
+Marmoset_BC <- RunPCA(Marmoset_BC, npcs = 30, verbose = FALSE)
+ElbowPlot(Marmoset_BC, ndims = 30)  
+
+# 20 PCs seems to suffciently capture the data
+nPCs <- 20
+Marmoset_BC <- FindNeighbors(Marmoset_BC, dims = 1:nPCs)
+# Start with a resolution parameter of .8
+Marmoset_BC <- FindClusters(Marmoset_BC, resolution = .8)
+Marmoset_BC <- RunTSNE(Marmoset_BC, dims = 1:nPCs)
+Marmoset_BC <- RunUMAP(Marmoset_BC, dims = 1:nPCs)
+
+saveRDS(Marmoset_BC, "~/Species_Objects/MarmosetBC_integrated_v1.rds")
+
+```
+
+### Visualize initial clusters
+```{r}
+# Marmoset_BC <- readRDS("~/Species_Objects/MarmosetBC_integrated_v1.rds")
+Idents(Marmoset_BC) <- "seurat_clusters"
+DimPlot(Marmoset_BC, label = TRUE)
+DimPlot(Marmoset_BC, group.by = "orig.file", cells = sample(colnames(Marmoset_BC)))
+VlnPlot(Marmoset_BC, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(Marmoset_BC, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+```
+
+Calculate DE genes for contaminant removal and merging spurious clusters
+```{r}
+MarmosetBC_markers <- FindAllMarkers(Marmoset_BC, assay = "RNA", only.pos = TRUE)
+saveRDS(MarmosetBC_markers, "../Species_Markers/MarmosetBCMarkers_v1.rds")
+```
+
+Plot top markers for each cluster, arranged by a dendrogram
+```{r}
+#MarmosetBC_markers <- readRDS("../Species_Markers/MarmosetBCMarkers_v1.rds")
+#Marmoset_BC <- readRDS("../Species_Objects/MarmosetBC_integrated_v1.rds")
+Idents(Marmoset_BC) <- "seurat_clusters"
+Marmoset_BC <- DendroOrder(Marmoset_BC)
+
+Idents(Marmoset_BC) <- "dendro_order"
+top_markers <- TopMarkers(Marmoset_BC, markers = MarmosetBC_markers, num_markers = 3)
+
+DotPlot(Marmoset_BC, features = top_markers, assay = "RNA", group.by = "dendro_order") + RotatedAxis()
+```
+
+### Merge spurious clusters and remove contaminant clusters
+```{r}
+# Cluster 16, 17: glia (Clu, Apoe, Glul)
+DotPlot(Marmoset_BC, features = head(subset(MarmosetBC_markers, cluster == 17),10)$gene, group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+
+Marmoset_BC <- DropClusters(Marmoset_BC, idents = c(16,17), refactor = FALSE)
+
+# Cluster 15: remove, abnormal high expression, no DE markers, cells distrbuted across UMAP
+DotPlot(Marmoset_BC, features = head(subset(MarmosetBC_markers, cluster == 15),10)$gene, group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+
+Marmoset_BC <- DropClusters(Marmoset_BC, idents = c(15), refactor = FALSE)
+
+# Cluster 0, 11: merge
+DotPlot(Marmoset_BC, features = head(subset(MarmosetBC_markers, cluster == 0),10)$gene, group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+DotPlot(Marmoset_BC, features = head(rownames(FindMarkers(Marmoset_BC, ident.1 = 0, ident.2 = 11)),10), group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+
+Marmoset_BC <- MergeClusters(Marmoset_BC, idents = c(0,11), refactor = FALSE)
+
+# Cluster 1, 10 - merge
+DotPlot(Marmoset_BC, features = head(subset(MarmosetBC_markers, cluster == 1),10)$gene, group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+DotPlot(Marmoset_BC, features = head(rownames(FindMarkers(Marmoset_BC, ident.1 = 1, ident.2 = 10)),10), group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+
+Marmoset_BC <- MergeClusters(Marmoset_BC, idents = c(1,10), refactor = TRUE)
+
+saveRDS(Marmoset_BC, "../Species_Objects/MarmosetBC_integrated_v2.rds")
+```
+
+Calculate DE genes using MAST
+```{r}
+# Marmoset_BC <- readRDS("../Species_Objects/MarmosetBC_integrated_v2.rds")
+Idents(Marmoset_BC) <- "seurat_clusters"
+MarmosetBC_markers <- FindAllMarkers(Marmoset_BC, assay = "RNA", test.use = "MAST")
+saveRDS(MarmosetBC_markers, "../Species_Markers/MarmosetBCMarkers_v2.rds")
+```
+
+Convert UMAP and diagonal gene plots to files
+```{r}
+Marmoset_BC <- readRDS("../Species_Objects/MarmosetBC_integrated_v2.rds")
+BC_markers <- readRDS()
+
+pdf("../Figures/Species_UMAPs/MarmosetBC.pdf", w=4, h=4, useDingbats = FALSE)
+DimPlot(Marmoset_BC, label = TRUE) + NoLegend()
+dev.off()
+
+markers <- PlotUniqueMarkers(Marmoset_BC, BC_markers, edits = TRUE)
+pdf("Figures/Species_MarkerPlots/MarmosetBC.pdf", , w=6, h=4, useDingbats = FALSE)
+dev.off()
+```
+
+### Create separate peripheral and fovea objects
+```{r}
+Marmoset_BC <- readRDS("../Species_Objects/MarmosetBC_integrated_v2.rds")
+Idents(Marmoset_BC) <- "orig.file"
+fovea_cells <- WhichCells(Marmoset_BC, idents = c("Marmoset1FoveaS1", "Marmoset1FoveaS2", "Marmoset1FoveaS3", "AdultmarmosetFovea2S1", "AdultmarmosetFovea2S2"))
+periphery_cells <- setdiff(colnames(Marmoset_BC), fovea_cells)
+
+Mar_fovea_BC <- subset(Marmoset_BC, cells = fovea_cells)
+saveRDS(Mar_fovea_BC, "../Species_Objects/MarmosetBC_fovea.rds")
+Mar_peri_BC <- subset(Marmoset_BC, cells = periphery_cells)
+saveRDS(Mar_peri_BC, "../Species_Objects/MarmosetBC_periphery.rds")
+```
+
+### Fovea Periphery Proportions
+```{r}
+Marmoset_BC <- readRDS("../Species_Objects/MarmosetBC_integrated_v2.rds")
+Marmoset_BC@meta.data$fov_peri <- "Periphery"
+Idents(Marmoset_BC) <- "orig.file"
+fovea_cells <- WhichCells(Marmoset_BC, idents = c("Marmoset1FoveaS1", "Marmoset1FoveaS2", "Marmoset1FoveaS3", "AdultmarmosetFovea2S1", "AdultmarmosetFovea2S2"))
+Marmoset_BC@meta.data[fovea_cells, "fov_peri"] <- "Fovea"
+
+data <- table(Marmoset_BC@meta.data$fov_peri, Marmoset_BC@meta.data$seurat_clusters)
+data <- as.data.frame(t(data / rowSums(data)))
+
+ggplot(data = data, aes(x=Var1, y=Freq, fill = Var2)) + 
+  geom_bar(stat="identity", position=position_dodge()) +
+  xlab("Cluster") +
+  ylab("Frequency") +
+  ggtitle("BCs") +
+  theme_minimal()
+
+```
+
+# Rods
+```{r}
+Marmoset <- readRDS("../Species_Objects/Marmoset_initial.rds")
+Idents(Marmoset) <- "dendro_order"
+
+Rod_markers <- c("RHO" ,"PDC", "NRL", "SAG", "GNAT1", "GNGT1")
+Cone_markers <- c("ARR3", "PDE6H", "GNAT2","GNGT2","OPN1SW")
+DotPlot(Marmoset, features = c(Rod_markers, Cone_markers), group.by = "dendro_order") + RotatedAxis()
+
+# Subset to rods, do preliminary clustering, and save
+Marmoset_Rods <- subset(Marmoset, cells = WhichCells(Marmoset, idents =c(25,27)))
+Marmoset_Rods <- ClusterSeurat(Marmoset_Rods)
+saveRDS(Marmoset_Rods, file = "../Species_Objects/MarmosetRods_v1.rds")
+```
+
+# Split into Fovea and Periphery
+```{r}
+Marmoset <- readRDS("../Species_Initial/Marmoset_initial.rds")
+Idents(Marmoset) <- "orig.file"
+
+Marmoset_Fovea <- subset(Marmoset, idents = c("Marmoset1FoveaS1", "Marmoset1FoveaS2", "Marmoset1FoveaS3", "AdultmarmosetFovea2S1", "AdultmarmosetFovea2S2"))
+# saveRDS(Marmoset_Fovea, "../Species_Objects/MarmosetFovea_initial.rds")
+
+Marmoset_Peri <- subset(Marmoset, idents = c("AdultmarmosetPer1CD73dpS1", "AdultmarmosetPer1CD73dpS2", "AdultmarmosetPer1CD90S1"))
+# saveRDS(Marmoset_Peri, "../Species_Objects/MarmosetPeriphery_initial.rds")
+```
+
+## Fovea RGCs
+### Integrate by file and cluster
+```{r}
+Idents(Marmoset_Fovea) <- "cell_class"
+Marm_Fov_RGC <- subset(Marmoset_Fovea, idents = "RGC")
+DefaultAssay(Marm_Fov_RGC) <- "RNA"
+
+# Perform integration - integrate by file
+obj.list <- SplitObject(Marm_Fov_RGC, split.by = "orig.file")
+for (i in 1:length(obj.list)) {
+      obj.list[[i]] <- NormalizeData(obj.list[[i]], verbose = FALSE)
+      obj.list[[i]] <- FindVariableFeatures(obj.list[[i]], selection.method = "vst", nfeatures = 2000, verbose = FALSE)
+}
+obj.anchors <- FindIntegrationAnchors(object.list = obj.list)
+Marm_Fov_RGC <- IntegrateData(anchorset = obj.anchors)
+DefaultAssay(Marm_Fov_RGC) <- "integrated"
+
+Marm_Fov_RGC <- ScaleData(Marm_Fov_RGC, verbose = FALSE)
+Marm_Fov_RGC <- RunPCA(Marm_Fov_RGC, npcs = 30, verbose = FALSE)
+ElbowPlot(Marm_Fov_RGC, ndims = 30)  
+
+
+# Import labels from clustering with all RGCs, remove contaminants
+allRGCs <- readRDS("../Species_Objects/MarmosetRGC_fovea.rds")
+Marm_Fov_RGC$annotated <- allRGCs$seurat_clusters
+Marm_Fov_RGC$keep <- !is.na(Marm_Fov_RGC$annotated)
+Idents(Marm_Fov_RGC) <- "keep"
+Marm_Fov_RGC <- subset(Marm_Fov_RGC, idents = TRUE)
+
+# 20 PCs seems to suffciently capture the data
+nPCs <- 20
+Marm_Fov_RGC <- FindNeighbors(Marm_Fov_RGC, dims = 1:nPCs)
+
+# Start with a resolution parameter of 0.8
+Marm_Fov_RGC <- FindClusters(Marm_Fov_RGC, resolution = .8)
+Marm_Fov_RGC <- RunTSNE(Marm_Fov_RGC, dims = 1:nPCs)
+Marm_Fov_RGC <- RunUMAP(Marm_Fov_RGC, dims = 1:nPCs)
+
+saveRDS(Marm_Fov_RGC, "../Species_Objects/Marmoset/MarmosetFovea_RGC_int_v1.rds")
+
+DimPlot(Marm_Fov_RGC, group.by = "seurat_clusters", label = TRUE)
+```
+
+### Merge clusters
+```{r}
+fovRGC_markers <- FindAllMarkers(Marm_Fov_RGC, assay = "RNA", only.pos = TRUE, max.cells.per.ident = 100)
+
+top_markers <- TopMarkers(Marm_Fov_RGC, markers = fovRGC_markers, num_markers = 3)
+
+DotPlot(Marm_Fov_RGC, features = top_markers, assay = "RNA") + RotatedAxis()
+
+Marm_Fov_RGC <- MergeClusters(Marm_Fov_RGC, idents = c(0,2), refactor = FALSE)
+Marm_Fov_RGC <- MergeClusters(Marm_Fov_RGC, idents = c(1,3), refactor = TRUE)
+
+saveRDS(Marm_Fov_RGC, "../Species_Objects/Marmoset/MarmosetFovea_RGC_int_v1.rds")
+```
+
+### Compare to other results
+```{r}
+Marm_Fov_RGC <- readRDS("../Species_Objects/MarmosetFovea_RGC_int_v1.rds")
+
+comparison <- table(Marm_Fov_RGC@meta.data$all_RGC_labels, Marm_Fov_RGC@meta.data$seurat_clusters)
+MakePrettyConfusionMatrix(comparison, xlab.use = "Fovea Clusters Alone", ylab.use = "All RGC Cluster Labels")
+```
+
+### Change metadata column labels
+Reason: object should only contain annotated column if is from a published study
+```{r}
+Fov_RGC <- readRDS("../Species_Objects/MarmosetFovea_RGC_int_v1.rds")
+
+Fov_RGC@meta.data$all_RGC_labels <- Fov_RGC@meta.data$annotated
+Fov_RGC@meta.data$annotated <- NULL
+
+Fov_RGC@meta.data$keep <- NULL
+
+Fov_RGC@meta.data$labels <- Fov_RGC@meta.data$seurat_clusters
+
+saveRDS(Fov_RGC, "../Species_Objects/MarmosetFovea_RGC_int_v1.rds")
+
+```
+
+```{r}
+Fov_RGC <- readRDS("../Species_Objects/MarmosetFovea_RGC_int_v2.rds")
+
+pdf("../Figures/Species_UMAPs/MarmosetFoveaRGC.pdf", w=4, h=4, useDingbats = FALSE)
+DimPlot(Fov_RGC, label = TRUE) + NoLegend()
+dev.off()
+
+markers <- PlotUniqueMarkers(Pig_BC, BC_markers, edits = TRUE)
+pdf("Figures/Species_MarkerPlots/PigBC.pdf", , w=6, h=4, useDingbats = FALSE)
+dev.off()
+
+```
+
+
+## Periphery RGCs
+### Cluster
+```{r}
+Marm_Per_RGC <- readRDS("../Species_Objects/MarmosetRGC_periphery.rds")
+DefaultAssay(Marm_Per_RGC) <- "RNA"
+
+# Only one file is present, no integration required
+Marm_Per_RGC <- NormalizeData(Marm_Per_RGC, verbose = FALSE)
+Marm_Per_RGC <- FindVariableFeatures(Marm_Per_RGC, selection.method = "vst", nfeatures = 2000, verbose = FALSE)
+
+
+Marm_Per_RGC <- ScaleData(Marm_Per_RGC, verbose = FALSE)
+Marm_Per_RGC <- RunPCA(Marm_Per_RGC, npcs = 30, verbose = FALSE)
+ElbowPlot(Marm_Per_RGC, ndims = 30)  
+
+# 20 PCs seems to suffciently capture the data
+nPCs <- 20
+Marm_Per_RGC <- FindNeighbors(Marm_Per_RGC, dims = 1:nPCs)
+
+# Start with a resolution parameter of 0.8
+Marm_Per_RGC <- FindClusters(Marm_Per_RGC, resolution = 0.8)
+Marm_Per_RGC <- RunTSNE(Marm_Per_RGC, dims = 1:nPCs)
+Marm_Per_RGC <- RunUMAP(Marm_Per_RGC, dims = 1:nPCs)
+
+saveRDS(Marm_Per_RGC, "../Species_Objects/Marmoset/MarmosetPeriphery_RGC_int_v1.rds")
+
+DimPlot(Marm_Per_RGC, group.by = "seurat_clusters", label = TRUE)
+```
+
+### Compare to other results
+```{r}
+annotated <- readRDS("../Species_Objects/MarmosetRGC_periphery.rds")
+Marm_Per_RGC@meta.data$annotated <- annotated@meta.data$seurat_clusters
+
+comparison <- table(Marm_Per_RGC@meta.data$annotated, Marm_Per_RGC@meta.data$seurat_clusters)
+
+MakePrettyConfusionMatrix(comparison, xlab.use = "Periphery Clusters Alone", ylab.use = "All RGC Cluster Labels")
+```
+
+### Change metadata column labels
+Reason: object should only contain annotated column if is from a published study
+```{r}
+Per_RGC <- readRDS("../Species_Objects/MarmosetPeriphery_RGC_int_v1.rds")
+
+annotated <- readRDS("../Species_Objects/MarmosetRGC_periphery.rds")
+Per_RGC@meta.data$all_RGC_labels <- annotated@meta.data$seurat_clusters
+
+Per_RGC@meta.data$labels <- Per_RGC@meta.data$seurat_clusters
+
+Idents(Per_RGC) <- "labels"
+
+saveRDS(Per_RGC, "../Species_Objects/MarmosetPeriphery_RGC_int_v1.rds")
+```
+
+
+## Fovea BCs
+```{r}
+Fov_BC <- readRDS("../Species_Objects/MarmosetBC_fovea.rds")
+Fov_BC@meta.data$annotated <- Fov_BC@meta.data$seurat_clusters
+```
+
+### Integrate by file and cluster
+```{r}
+DefaultAssay(Fov_BC) <- "RNA"
+
+# Perform integration - integrate by file
+obj.list <- SplitObject(Fov_BC, split.by = "orig.file")
+for (i in 1:length(obj.list)) {
+      obj.list[[i]] <- NormalizeData(obj.list[[i]], verbose = FALSE)
+      obj.list[[i]] <- FindVariableFeatures(obj.list[[i]], selection.method = "vst", nfeatures = 2000, verbose = FALSE)
+}
+
+obj.anchors <- FindIntegrationAnchors(object.list = obj.list)
+Fov_BC <- IntegrateData(anchorset = obj.anchors)
+DefaultAssay(Fov_BC) <- "integrated"
+
+Fov_BC <- ScaleData(Fov_BC, verbose = FALSE)
+Fov_BC <- RunPCA(Fov_BC, npcs = 30, verbose = FALSE)
+ElbowPlot(Fov_BC, ndims = 30)  
+
+# 20 PCs seems to suffciently capture the data
+nPCs <- 20
+Fov_BC <- FindNeighbors(Fov_BC, dims = 1:nPCs)
+
+# Start with a resolution parameter of 0.8
+Fov_BC <- FindClusters(Fov_BC, resolution = .8)
+Fov_BC <- RunTSNE(Fov_BC, dims = 1:nPCs)
+Fov_BC <- RunUMAP(Fov_BC, dims = 1:nPCs)
+
+saveRDS(Fov_BC, "../Species_Objects/Marmoset/MarmosetFovea_BC_int_v1.rds")
+
+DimPlot(Fov_BC, group.by = "seurat_clusters", label = TRUE)
+```
+
+### Merge clusters
+```{r}
+object = Fov_BC
+ident.1 = 0
+ident.2 = 11
+
+markers <- FindMarkers(object, ident.1 = ident.1, ident.2 = ident.2)
+DotPlot(object, features = head(rownames(subset(markers, avg_log2FC > 0)), 10), assay = "RNA", idents = c(ident.1, ident.2)) + RotatedAxis()
+  DotPlot(object, features = head(rownames(subset(markers, avg_log2FC < 0)), 10), assay = "RNA", idents = c(ident.1, ident.2)) + RotatedAxis()
+  
+Fov_BC <- MergeClusters(Fov_BC, idents = c(1,6), refactor = FALSE)
+Fov_BC <- MergeClusters(Fov_BC, idents = c(0,11), refactor = TRUE)
+
+DimPlot(Fov_BC, group.by = "seurat_clusters", label = TRUE)
+saveRDS(Fov_BC, "../Species_Objects/Marmoset/MarmosetFovea_BC_int_v1.rds")
+```
+
+### Compare to other results
+```{r}
+comparison <- table(Fov_BC@meta.data$annotated, Fov_BC@meta.data$seurat_clusters)
+MakePrettyConfusionMatrix(comparison, xlab.use = "Fovea Clusters Alone", ylab.use = "All BC Cluster Labels")
+```
+
+### Change metadata column labels
+Reason: object should only contain annotated column if is from a published study
+```{r}
+Fov_BC@meta.data$all_BC_labels <- Fov_BC@meta.data$annotated
+Fov_BC@meta.data$annotated <- NULL
+
+Fov_BC@meta.data$labels <- Fov_BC@meta.data$seurat_clusters
+saveRDS(Fov_BC, "../Species_Objects/MarmosetFovea_BC_int_v1.rds")
+```
+
+```{r}
+Fov_BC <- readRDS("../Species_Objects/MarmosetFovea_BC_int_v1.rds")
+
+pdf("../Figures/Species_UMAPs/MarmosetFoveaBC.pdf", w=4, h=4, useDingbats = FALSE)
+DimPlot(Fov_BC, label = TRUE) + NoLegend()
+dev.off()
+
+markers <- PlotUniqueMarkers(Pig_BC, BC_markers, edits = TRUE)
+pdf("Figures/Species_MarkerPlots/PigBC.pdf", , w=6, h=4, useDingbats = FALSE)
+dev.off()
+
+```
+
+## Periphery BCs
+```{r}
+Per_BC <- readRDS("../Species_Objects/MarmosetBC_periphery.rds")
+Per_BC@meta.data$all_BC_labels <- Per_BC@meta.data$seurat_clusters
+```
+
+### Integrate by file and cluster
+```{r}
+DefaultAssay(Per_BC) <- "RNA"
+
+# Perform integration - integrate by file
+obj.list <- SplitObject(Per_BC, split.by = "orig.file")
+for (i in 1:length(obj.list)) {
+      obj.list[[i]] <- NormalizeData(obj.list[[i]], verbose = FALSE)
+      obj.list[[i]] <- FindVariableFeatures(obj.list[[i]], selection.method = "vst", nfeatures = 2000, verbose = FALSE)
+}
+
+obj.anchors <- FindIntegrationAnchors(object.list = obj.list)
+Per_BC <- IntegrateData(anchorset = obj.anchors)
+DefaultAssay(Per_BC) <- "integrated"
+
+Per_BC <- ScaleData(Per_BC, verbose = FALSE)
+Per_BC <- RunPCA(Per_BC, npcs = 30, verbose = FALSE)
+ElbowPlot(Per_BC, ndims = 30)  
+
+# 12 PCs seems to suffciently capture the data
+nPCs <- 12
+Per_BC <- FindNeighbors(Per_BC, dims = 1:nPCs)
+
+# Start with a resolution parameter of 0.8
+Per_BC <- FindClusters(Per_BC, resolution = 0.8)
+Per_BC <- RunTSNE(Per_BC, dims = 1:nPCs)
+Per_BC <- RunUMAP(Per_BC, dims = 1:nPCs)
+
+saveRDS(Per_BC, "../Species_Objects/Marmoset/MarmosetPeriphery_BC_int_v1.rds")
+
+DimPlot(Per_BC, group.by = "seurat_clusters", label = TRUE)
+```
+
+
+### Compare to other results
+```{r}
+Per_BC <- MergeClusters(Per_BC, idents = c(), refactor = TRUE)
+comparison <- table(Per_BC@meta.data$all_BC_labels, Per_BC@meta.data$seurat_clusters)
+MakePrettyConfusionMatrix(comparison, xlab.use = "Periphery Clusters Alone", ylab.use = "All BC Cluster Labels")
+
+saveRDS(Per_BC, "../Species_Objects/Marmoset/MarmosetPeriphery_BC_int_v1.rds")
+
+```
+
+### Change metadata column labels
+Reason: object should only contain annotated column if is from a published study
+```{r}
+Per_BC <-readRDS("../Species_Objects/MarmosetPeriphery_BC_int_v1.rds")
+
+Per_BC@meta.data$labels <- Per_BC@meta.data$seurat_clusters
+Idents(Per_BC) <- "labels"
+
+saveRDS(Per_BC, "../Species_Objects/MarmosetPeriphery_BC_int_v1.rds")
+```
+
+# Compare to Yirong's analysis
+```{r}
+Fov_RGC <- readRDS("../Species_Objects/MarmosetFovea_RGC_int_v2.rds")
+Per_RGC <- readRDS("../Species_Objects/MarmosetPeriphery_RGC_int_v1.rds")
+Marm_RGC <- readRDS("../Species_Objects/MarmosetRGC_integrated_v3.rds")
+
+YP_Fov <- readRDS("../Species_Objects/Marmoset/Adult_Fovea_RGC_final.rds")
+YP_Per <- readRDS("../Species_Objects/Marmoset/Adult_Periphery_RGC_final.rds")
+```
+
+## Fovea
+```{r}
+# Convert barcodes to YP's notation
+Fov_RGC@meta.data$code <- substr(rownames(Fov_RGC@meta.data), 28, 43)
+map <- data.frame(YP = names(table(YP_Fov@meta.data$orig.ident)), row.names = c("Marmoset1FoveaS1", "Marmoset1FoveaS2", "Marmoset1FoveaS3", "AdultmarmosetFovea2S1", "AdultmarmosetFovea2S2", "nope", "nah", "AdultmarmosetPer1CD90S1"))
+Fov_RGC@meta.data$file <- map[Fov_RGC@meta.data$orig.file, "YP"]
+Fov_RGC@meta.data$new_code <- paste0(Fov_RGC@meta.data$file,"_", Fov_RGC@meta.data$code)
+
+Fov_RGC@meta.data$old_code <- rownames(Fov_RGC@meta.data)
+rownames(Fov_RGC@meta.data) <- Fov_RGC@meta.data$new_code
+
+# Find cells in both sets
+cells <- rownames(Fov_RGC@meta.data)[rownames(Fov_RGC@meta.data) %in% rownames(YP_Fov@meta.data)]
+
+Fov_RGC@meta.data$YP <- "Not in"
+Fov_RGC@meta.data[cells, "YP"] <- as.character(YP_Fov@meta.data[cells, "celltype"])
+
+MakePrettyConfusionMatrix(table(Fov_RGC@meta.data$labels, Fov_RGC@meta.data$YP))
+```
+
+```{r}
+rownames(Fov_RGC@meta.data) <- Fov_RGC@meta.data$old_code
+```
+
+### Quality metrics
+```{r}
+rownames(Fov_RGC@meta.data) <- Fov_RGC@meta.data$old_code
+
+VlnPlot(Fov_RGC, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(Fov_RGC, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+DotPlot(Fov_RGC, features = c("RBPMS", "SLC17A6", "THY1"), assay = "RNA")
+```
+
+### DE genes
+```{r}
+markers <- FindAllMarkers(Fov_RGC, assay = "RNA", only.pos = TRUE, max.cells.per.ident = 100)
+DotPlot(Fov_RGC, features = unique(top_markers), assay = "RNA") + RotatedAxis()
+DefaultAssay(Fov_RGC) <- "RNA"
+top_markers <- PlotUniqueMarkers(Fov_RGC, markers = markers, edits = TRUE)
+
+DotPlot(Fov_RGC, features = top_markers, assay = "RNA") + RotatedAxis()
+```
+
+### Special Cases
+```{r}
+# Are clusters 4 and 6 unique
+markers4_6 <- FindMarkers(Fov_RGC, assay = "RNA", ident.1 = 4, ident.2 = 6)
+markers4_6 <- markers4_6[order(markers4_6$avg_log2FC),]
+
+DotPlot(Fov_RGC, features = c(rownames(head(markers4_6, 10)), rownames(tail(markers4_6, 10))), assay = "RNA", idents = c(4,6)) + RotatedAxis()
+
+# Plot markers for removed clusters
+clust = 21
+clus_markers = head(subset(markers, cluster == clust)$gene, 10)
+DotPlot(Fov_RGC, features = clus_markers, assay = "RNA") + RotatedAxis()
+
+# Clusters 5 and 20
+ident.1 = 5
+ident.2 = 20
+
+pair_markers <- FindMarkers(Fov_RGC, assay = "RNA", ident.1 = ident.1, ident.2 = ident.2)
+pair_markers <- pair_markers[order(pair_markers$avg_log2FC),]
+
+DotPlot(Fov_RGC, features = c(rownames(head(pair_markers, 10)), rownames(tail(pair_markers))), assay = "RNA", idents = c(ident.1,ident.2)) + RotatedAxis()
+
+```
+
+
+```{r}
+RGC_markers= c("RBPMS", "SLC17A6", "POU6F2")
+BC_markers=c("VSX2", "CABP5", "GRIK1", "OTX2", "PRKCA")
+AC_markers=c("TFAP2A","GAD1", "GAD2", "SLC6A9")
+HC_markers=c("ONECUT1", "LHX1", "CALB1", "TPM3")
+Cone_markers=c("PDE6H", "CRX")
+Rod_markers=c("SAG", "PDC", "RHO", "ARR3")
+MG_markers=c("SLC1A3","RLBP1", "GLUL", "APOE")
+Other_markers = c("FN1", "GSN","CLDN5","RGS5")
+
+DotPlot(Fov_RGC, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Cone_markers, Rod_markers, MG_markers, Other_markers)) + RotatedAxis()
+```
+
+### Remove doublets and recluster
+```{r}
+Fov_RGC <- DropClusters(Fov_RGC, idents = c(3, 13, 16, 17, 18, 20, 21), refactor = FALSE)
+
+DefaultAssay(Fov_RGC) <- "integrated"
+Fov_RGC <- FindNeighbors(Fov_RGC, dims = 1:20)
+Fov_RGC <- FindClusters(Fov_RGC, resolution = 3)
+Fov_RGC <- RunUMAP(Fov_RGC, dims = 1:20)
+DimPlot(Fov_RGC, label = TRUE, group.by = "integrated_snn_res.3")
+
+Fov_RGC <- MergeClusters(Fov_RGC, idents = c(0,1,6,11,24), refactor = FALSE)
+Fov_RGC <- MergeClusters(Fov_RGC, idents = c(2,3,4,8), refactor = FALSE)
+Fov_RGC <- MergeClusters(Fov_RGC, idents = c(9,19), refactor = TRUE)
+
+
+Fov_RGC@meta.data$labels <- Fov_RGC@meta.data$seurat_clusters
+
+saveRDS(Fov_RGC, "../Species_Objects/MarmosetFovea_RGC_int_v2.rds")
+```
+
+```{r}
+# Convert barcodes to YP's notation
+Fov_RGC@meta.data$code <- substr(rownames(Fov_RGC@meta.data), 28, 43)
+map <- data.frame(YP = names(table(YP_Fov@meta.data$orig.ident)), row.names = c("Marmoset1FoveaS1", "Marmoset1FoveaS2", "Marmoset1FoveaS3", "AdultmarmosetFovea2S1", "AdultmarmosetFovea2S2", "nope", "nah", "AdultmarmosetPer1CD90S1"))
+Fov_RGC@meta.data$file <- map[Fov_RGC@meta.data$orig.file, "YP"]
+Fov_RGC@meta.data$new_code <- paste0(Fov_RGC@meta.data$file,"_", Fov_RGC@meta.data$code)
+
+Fov_RGC@meta.data$old_code <- rownames(Fov_RGC@meta.data)
+rownames(Fov_RGC@meta.data) <- Fov_RGC@meta.data$new_code
+
+# Find cells in both sets
+cells <- rownames(Fov_RGC@meta.data)[rownames(Fov_RGC@meta.data) %in% rownames(YP_Fov@meta.data)]
+
+Fov_RGC@meta.data$YP <- "Not in"
+Fov_RGC@meta.data[cells, "YP"] <- as.character(YP_Fov@meta.data[cells, "celltype"])
+
+MakePrettyConfusionMatrix(table(Fov_RGC@meta.data$labels, Fov_RGC@meta.data$YP))
+
+```
+
+### Annotate RGC clusters
+```{r}
+
+Idents(Fov_RGC) <- "labels"
+Fov_RGC@meta.data$annotated <- "N/A"
+Fov_RGC@meta.data[WhichCells(Fov_RGC, idents = 1), "annotated"] <- "ON_MG"
+Fov_RGC@meta.data[WhichCells(Fov_RGC, idents = 2), "annotated"] <- "OFF_MG"
+Fov_RGC@meta.data[WhichCells(Fov_RGC, idents = 3), "annotated"] <- "fRGC1"
+Fov_RGC@meta.data[WhichCells(Fov_RGC, idents = 4), "annotated"] <- "OFF_PG_a"
+Fov_RGC@meta.data[WhichCells(Fov_RGC, idents = 5), "annotated"] <- "OFF_PG_b"
+Fov_RGC@meta.data[WhichCells(Fov_RGC, idents = 6), "annotated"] <- "ON_PG"
+Fov_RGC@meta.data[WhichCells(Fov_RGC, idents = 7), "annotated"] <- "fRGC2"
+Fov_RGC@meta.data[WhichCells(Fov_RGC, idents = 8), "annotated"] <- "fRGC8"
+Fov_RGC@meta.data[WhichCells(Fov_RGC, idents = 9), "annotated"] <- "fRGC3"
+Fov_RGC@meta.data[WhichCells(Fov_RGC, idents = 10), "annotated"] <- "fRGC9"
+Fov_RGC@meta.data[WhichCells(Fov_RGC, idents = 11), "annotated"] <- "fRGC7"
+Fov_RGC@meta.data[WhichCells(Fov_RGC, idents = 12), "annotated"] <- "fRGC4"
+Fov_RGC@meta.data[WhichCells(Fov_RGC, idents = 13), "annotated"] <- "fRGC5"
+Fov_RGC@meta.data[WhichCells(Fov_RGC, idents = 14), "annotated"] <- "fRGC6"
+Fov_RGC@meta.data[WhichCells(Fov_RGC, idents = 15), "annotated"] <- "fRGC10"
+Fov_RGC@meta.data[WhichCells(Fov_RGC, idents = 16), "annotated"] <- "fRGC12"
+Fov_RGC@meta.data[WhichCells(Fov_RGC, idents = 17), "annotated"] <- "fRGC11"
+
+Idents(Fov_RGC) <- "annotated"
+
+saveRDS(Fov_RGC, "../Species_Objects/MarmosetFovea_RGC_int_v3.rds")
+Fov_RGC <- readRDS("../Species_Objects/MarmosetFovea_RGC_int_v3.rds")
+
+```
+
+
+
+
+
+
+
+
+
+## Periphery
+```{r}
+Per_RGC <- readRDS("../Species_Objects/MarmosetPeriphery_RGC_int_v1.rds")
+
+Per_RGC@meta.data$code <- substr(rownames(Per_RGC@meta.data), 28, 43)
+
+# Convert barcodes to YP's notation
+Per_RGC@meta.data$file <- "AdultM2Per1Cd90S1"
+Per_RGC@meta.data$new_code <- paste0(Per_RGC@meta.data$file,"_", Per_RGC@meta.data$code)
+
+Per_RGC@meta.data$old_code <- rownames(Per_RGC@meta.data)
+rownames(Per_RGC@meta.data) <- Per_RGC@meta.data$new_code
+
+# Find cells in both sets
+cells <- rownames(Per_RGC@meta.data)[rownames(Per_RGC@meta.data) %in% rownames(YP_Per@meta.data)]
+
+Per_RGC@meta.data$YP <- "Not in"
+Per_RGC@meta.data[cells, "YP"] <- as.character(YP_Per@meta.data[cells, "celltype"])
+
+MakePrettyConfusionMatrix(table(Per_RGC@meta.data$labels, Per_RGC@meta.data$YP))
+
+
+rownames(Per_RGC@meta.data) <- Per_RGC@meta.data$old_code
+
+```
+
+### Remove contaminant clusters
+```{r}
+RGC_markers= c("RBPMS", "SLC17A6", "POU6F2")
+BC_markers=c("VSX2", "CABP5", "GRIK1", "OTX2", "PRKCA")
+AC_markers=c("TFAP2A","GAD1", "GAD2", "SLC6A9")
+HC_markers=c("ONECUT1", "LHX1", "CALB1", "TPM3")
+Cone_markers=c("PDE6H", "CRX")
+Rod_markers=c("SAG", "PDC", "RHO", "ARR3")
+MG_markers=c("SLC1A3","RLBP1", "GLUL", "APOE")
+Other_markers = c("FN1", "GSN","CLDN5","RGS5")
+
+DotPlot(Per_RGC, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Cone_markers, Rod_markers, MG_markers, Other_markers)) + RotatedAxis()
+```
+
+```{r}
+rownames(Per_RGC@meta.data) <- Per_RGC@meta.data$old_code
+
+VlnPlot(Per_RGC, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(Per_RGC, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+DotPlot(Per_RGC, features = c("RBPMS", "SLC17A6", "THY1"), assay = "RNA")
+```
+
+```{r}
+# Cluster 17 is BP doublets
+# Cluster 14 has no unique markers and is low quality
+# Cluster 20 are glia markers
+markers <- FindMarkers(Per_RGC, ident.1 = 19)
+markers20 <- FindMarkers(Per_RGC, ident.1 = 20)
+
+Per_RGC <- DropClusters(Per_RGC, idents = c(14, 17, 20), refactor = FALSE)
+```
+
+### Recluster and annotate
+```{r}
+DefaultAssay(Per_RGC) <- "integrated"
+Per_RGC <- RunPCA(Per_RGC)
+Per_RGC <- FindNeighbors(Per_RGC, dims = 1:15)
+Per_RGC <- FindClusters(Per_RGC, resolution = 1.2)
+Per_RGC <- RunUMAP(Per_RGC, dims = 1:20)
+DimPlot(Per_RGC, label = TRUE, group.by = "integrated_snn_res.3")
+
+Per_RGC@meta.data$labels <- Per_RGC@meta.data$integrated_snn_res.3
+
+Per_RGC@meta.data$seurat_clusters <- Per_RGC@meta.data$integrated_snn_res.3
+Per_RGC <- MergeClusters(Per_RGC, idents = c(1,10), refactor = FALSE)
+Per_RGC <- MergeClusters(Per_RGC, idents = c(12,7), refactor = FALSE)
+Per_RGC <- MergeClusters(Per_RGC, idents = c(3,20), refactor = FALSE)
+Per_RGC <- MergeClusters(Per_RGC, idents = c(9,15), refactor = TRUE)
+Per_RGC <- MergeClusters(Per_RGC, idents = c(13,6), refactor = TRUE)
+
+
+Per_RGC@meta.data$labels <- Per_RGC@meta.data$seurat_clusters
+
+MakePrettyConfusionMatrix(table(Per_RGC@meta.data$labels, Per_RGC@meta.data$YP))
+```
+
+### Annotate RGC clusters
+```{r}
+
+Idents(Per_RGC) <- "labels"
+Per_RGC@meta.data$annotated <- "N/A"
+Per_RGC@meta.data[WhichCells(Per_RGC, idents = 1), "annotated"] <- "OFF_MG"
+Per_RGC@meta.data[WhichCells(Per_RGC, idents = 2), "annotated"] <- "ON_MG"
+Per_RGC@meta.data[WhichCells(Per_RGC, idents = 3), "annotated"] <- "pRGC3"
+Per_RGC@meta.data[WhichCells(Per_RGC, idents = 4), "annotated"] <- "pRGC5"
+Per_RGC@meta.data[WhichCells(Per_RGC, idents = 5), "annotated"] <- "pRGC7_a"
+Per_RGC@meta.data[WhichCells(Per_RGC, idents = 6), "annotated"] <- "pRGC12/13"
+Per_RGC@meta.data[WhichCells(Per_RGC, idents = 7), "annotated"] <- "pRGC8"
+Per_RGC@meta.data[WhichCells(Per_RGC, idents = 8), "annotated"] <- "pRGC6"
+Per_RGC@meta.data[WhichCells(Per_RGC, idents = 9), "annotated"] <- "pRGC4/9"
+Per_RGC@meta.data[WhichCells(Per_RGC, idents = 10), "annotated"] <- "ON_PG"
+Per_RGC@meta.data[WhichCells(Per_RGC, idents = 11), "annotated"] <- "pRGC11"
+Per_RGC@meta.data[WhichCells(Per_RGC, idents = 12), "annotated"] <- "pRGC1"
+Per_RGC@meta.data[WhichCells(Per_RGC, idents = 13), "annotated"] <- "pRGC14"
+Per_RGC@meta.data[WhichCells(Per_RGC, idents = 14), "annotated"] <- "OFF_PG_a"
+Per_RGC@meta.data[WhichCells(Per_RGC, idents = 15), "annotated"] <- "pRGC10"
+Per_RGC@meta.data[WhichCells(Per_RGC, idents = 16), "annotated"] <- "OFF_PG_b"
+Per_RGC@meta.data[WhichCells(Per_RGC, idents = 17), "annotated"] <- "pRGC7_b"
+
+Idents(Per_RGC) <- "annotated"
+
+saveRDS(Per_RGC, "../Species_Objects/MarmosetPeriphery_RGC_int_v2.rds")
+```
+
+```{r}
+ab_markers <- FindMarkers(Fov_RGC, ident.1 = "OFF_PG_a", ident.2 = "OFF_PG_b")
+ab_markers <- ab_markers[order(ab_markers$pct.1), ]
+DotPlot(Fov_RGC, features = c(head(rownames(ab_markers)), tail(rownames(ab_markers))), idents = c("OFF_PG_a", "OFF_PG_b")) + RotatedAxis()
+
+DotPlot(Per_RGC, features = c(head(rownames(ab_markers)), tail(rownames(ab_markers))), idents = c(14, 16)) + RotatedAxis()
+
+```
+
+# Annotate BCs using NOGs
+```{r}
+DE <- readRDS("../Species_Markers/Ferret_genes_initial.rds")
+```
+
+# Correct BC labels
+```{r}
+Peri <- readRDS("../Species_Objects/MarmosetPeriphery_BC_int_v1.rds")
+Peri@meta.data$type <- paste0("p", Peri@meta.data$labels)
+Idents(Peri) <- "type"
+saveRDS(Peri, "../Species_Objects/MarmosetPeriphery_BC_int_v1.rds")
+
+Fovea <- readRDS("../Species_Objects/MarmosetFovea_BC_int_v1.rds")
+Fovea@meta.data$type <- paste0("f", Fovea@meta.data$labels)
+Idents(Fovea) <- "type"
+saveRDS(Fovea, "../Species_Objects/MarmosetFovea_BC_int_v1.rds")
+
+```
+
+
+
+
