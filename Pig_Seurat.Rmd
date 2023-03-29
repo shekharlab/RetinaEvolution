@@ -1,0 +1,664 @@
+---
+title: "Pig Retina"
+output: html_notebook
+---
+
+## Load libraries
+```{r}
+library(tidyverse)
+library(reshape2)
+library(ggtree)
+# library(velocyto.R)
+library(Seurat)
+library(ggplot2)
+source("../utils/utilFxns.R")
+source("../utils/plottingFxns.R")
+```
+
+
+Read in velocyto matrices
+```{r}
+data_dir <- "/Users/joshhahn/Google Drive File Stream/My Drive/shekharlab_data/projects/Pig/Processed/190503_HY25MCCXY/"
+Pig1CD73dpS1 <- read.loom.matrices(file = paste0(data_dir, "Pig1CD73dpS1/outs/possorted_genome_bam_F2AA8.loom"), engine = "hdf5r")
+Pig1CD73dpS2 <- read.loom.matrices(file = paste0(data_dir, "Pig1CD73dpS2/outs/possorted_genome_bam_XA78O.loom"), engine = "hdf5r")
+Pig1CD90S1 <- read.loom.matrices(file = paste0(data_dir, "Pig1CD90S1/outs/possorted_genome_bam_5OU5U.loom"), engine = "hdf5r")
+Pig1CD90S2 <- read.loom.matrices(file = paste0(data_dir, "Pig1CD90S2/outs/possorted_genome_bam_11KFI.loom"), engine = "hdf5r")
+
+data_dir <- "/Users/joshhahn/Google Drive File Stream/My Drive/shekharlab_data/projects/Pig/Processed/191216_H72LCCCX2/"
+PigNucNChx10N <- read.loom.matrices(file = paste0(data_dir, "pigNucNeunNChx10N/outs/possorted_genome_bam_F49KI.loom"), engine = "hdf5r")
+PigNucNChx10P <- read.loom.matrices(file = paste0(data_dir, "pigNucNeunNChx10P/outs/possorted_genome_bam_CPKXV.loom"), engine = "hdf5r")
+PigNucPChx10N <- read.loom.matrices(file = paste0(data_dir, "pigNucNeunPChx10N/outs/possorted_genome_bam_0EB7G.loom"), engine = "hdf5r")
+
+data_dir <- "/Users/joshhahn/Google Drive File Stream/My Drive/shekharlab_data/projects/Pig/Processed/200207_H72KKCCX2_snSeq/"
+PigNucNChx10NS2 <- read.loom.matrices(file = paste0(data_dir, "pigNucNeunNChx10PS2/outs/possorted_genome_bam_IA2SD.loom"), engine = "hdf5r")
+PigNucNChx10NS3 <- read.loom.matrices(file = paste0(data_dir, "pigNucNeunNChx10PS3/outs/possorted_genome_bam_TAGI6.loom"), engine = "hdf5r")
+PigNucPS2 <- read.loom.matrices(file = paste0(data_dir, "pigNucNeunPS2/outs/possorted_genome_bam_20FYM.loom"), engine = "hdf5r")
+PigNucPS3 <- read.loom.matrices(file = paste0(data_dir, "pigNucNeunPS3/outs/possorted_genome_bam_OSHHJ.loom"), engine = "hdf5r")
+
+
+```
+
+Add introns and exons and combine matrices
+```{r}
+Pig1CD73dpS1_mat <- Pig1CD73dpS1$spliced + Pig1CD73dpS1$unspliced
+Pig1CD73dpS2_mat <- Pig1CD73dpS2$spliced + Pig1CD73dpS2$unspliced
+Pig1CD90S1_mat <- Pig1CD90S1$spliced + Pig1CD90S1$unspliced
+Pig1CD90S2_mat <- Pig1CD90S2$spliced + Pig1CD90S2$unspliced
+
+PigNucNChx10N_mat <- PigNucNChx10N$spliced + PigNucNChx10N$unspliced
+PigNucNChx10P_mat <- PigNucNChx10P$spliced + PigNucNChx10P$unspliced
+PigNucPChx10N_mat <- PigNucPChx10N$spliced + PigNucPChx10N$unspliced
+
+PigNucNChx10NS2_mat <- PigNucNChx10NS2$spliced + PigNucNChx10NS2$unspliced
+PigNucNChx10NS3_mat <- PigNucNChx10NS3$spliced + PigNucNChx10NS3$unspliced
+PigNucPS2_mat <- PigNucPS2$spliced + PigNucPS2$unspliced
+PigNucPS3_mat <- PigNucPS3$spliced + PigNucPS3$unspliced
+
+Pig_mat <- cbind(Pig1CD73dpS1_mat, Pig1CD73dpS2_mat, Pig1CD90S1_mat, Pig1CD90S2_mat, PigNucNChx10N_mat, PigNucNChx10P_mat, PigNucPChx10N_mat, PigNucNChx10NS2_mat, PigNucNChx10NS3_mat, PigNucPS2_mat, PigNucPS3_mat)
+```
+
+Create Seurat object
+```{r}
+Pig <- CreateSeuratObject(Pig_mat, names.delim = ":")
+
+Pig@meta.data[colnames(Pig1CD73dpS1_mat), 'orig.file'] = "Pig1CD73dpS1"
+Pig@meta.data[colnames(Pig1CD73dpS2_mat), 'orig.file'] = "Pig1CD73dpS2"
+Pig@meta.data[colnames(Pig1CD90S1_mat), 'orig.file'] = "Pig1CD90S1"
+Pig@meta.data[colnames(Pig1CD90S2_mat), 'orig.file'] = "Pig1CD90S2"
+
+Pig@meta.data[colnames(PigNucNChx10N_mat), 'orig.file'] = "pigNucNeunNChx10N"
+Pig@meta.data[colnames(PigNucNChx10P_mat), 'orig.file'] = "pigNucNeunNChx10P"
+Pig@meta.data[colnames(PigNucPChx10N_mat), 'orig.file'] = "pigNucNeunPChx10N"
+
+Pig@meta.data[colnames(PigNucNChx10NS2_mat), 'orig.file'] = "pigNucNeunNChx10PS2"
+Pig@meta.data[colnames(PigNucNChx10NS3_mat), 'orig.file'] = "pigNucNeunNChx10PS3"
+Pig@meta.data[colnames(PigNucPS2_mat), 'orig.file'] = "pigNucNeunPS2"
+Pig@meta.data[colnames(PigNucPS3_mat), 'orig.file'] = "pigNucNeunPS3"
+
+```
+
+Initial quality control metrics
+```{r}
+VlnPlot(Pig, features = "nCount_RNA", pt.size = 0)
+VlnPlot(Pig, features = "nFeature_RNA", pt.size = 0)
+```
+
+## Cell class annotation
+Perform initial clustering
+```{r}
+# Pig <- ClusterSeurat(Pig)
+Pig <- NormalizeData(Pig)
+Pig <- FindVariableFeatures(Pig)
+Pig <- ScaleData(Pig)
+Pig <- RunPCA(Pig)
+Pig <- FindNeighbors(Pig, dims = 1:30)
+Pig <- FindClusters(Pig, resolution = .5)
+Pig <- RunTSNE(Pig, dims = 1:30)
+Pig <- RunUMAP(Pig, dims = 1:30)
+saveRDS(Pig, file = "../Species_Objects/Pig_initial.rds")
+```
+
+Visualize initial clusters
+```{r}
+Pig <- readRDS("../Species_Objects/Pig_initial.rds")
+DimPlot(Pig, label = TRUE)
+DimPlot(Pig, group.by = "orig.file", cells = sample(colnames(Pig)))
+VlnPlot(Pig, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(Pig, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+```
+
+Look for major retinal cell classes
+```{r}
+# Pig <- DendroOrder(Pig)
+
+RGC_markers= c("RBPMS", "SLC17A6", "POU6F2")
+BC_markers=c("VSX2", "CABP5", "GRIK1")
+AC_markers=c("TFAP2A","GAD1", "GAD2", "SLC6A9")
+HC_markers=c("ONECUT1", "LHX1","ONECUT2")
+Cone_markers=c("CRX", "ARR3")
+Rod_markers=c("SAG", "PDC", "RHO")
+MG_markers=c("SLC1A3","RLBP1", "APOE")
+
+DotPlot(Pig, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Cone_markers, Rod_markers, MG_markers), group.by = "dendro_order") + RotatedAxis()
+```
+
+Calculate DE genes for cluster annotation
+```{r}
+Pig_genes <- FindAllMarkers(Pig)
+saveRDS(Pig_genes, file = "../Marker_Genes/Pig_genes_initial.rds")
+```
+
+Annotate clusters based on expression of cell class markers
+```{r}
+Pig@meta.data$cell_class = "Other"
+Pig@meta.data[WhichCells(Pig, idents =c(47,48,54,20,34,46,56,26,51,38,30,58,39,11,16,44,27,42,22,29)),]$cell_class = "RGC"
+Pig@meta.data[WhichCells(Pig, idents = c(0,25,6,17,7,45,3,55,35,59,32,24,43,23,49,28,14)),]$cell_class = "BP"
+Pig@meta.data[WhichCells(Pig, idents = c(37,12)),]$cell_class = "GabaAC"
+Pig@meta.data[WhichCells(Pig, idents = c(52,40)),]$cell_class = "GlyAC"
+
+Pig@meta.data[WhichCells(Pig, idents = c(50)),]$cell_class = "HC"
+Pig@meta.data[WhichCells(Pig, idents = c(18,2,5,36,21)),]$cell_class = "Rod"
+Pig@meta.data[WhichCells(Pig, idents = c(8,19,31)),]$cell_class = "Cone"
+Pig@meta.data[WhichCells(Pig, idents = c(10,33, 41, 15)),]$cell_class = "MG"
+Pig@meta.data[WhichCells(Pig, idents = c(57)),]$cell_class = "MicroG"
+
+
+Pig@meta.data[WhichCells(Pig, idents = c(1,4,9,18,13, 53, 15)),]$cell_class = "Other"
+
+DimPlot(Pig, group.by = "cell_class")
+
+saveRDS(Pig, "../Species_Objects/Pig_initial.rds")
+```
+
+Annotate other clusters not easily identifiable
+```{r}
+# Cluster 1 - low quality cells
+Pig_markers1 <- FindMarkers(Pig, ident.1 = "1")
+print(c("Cluster 1: ", head(Pig_markers1$gene)))
+
+# Cluster 4 - low quality cells
+Pig_markers4 <- FindMarkers(Pig, ident.1 = "4")
+print(c("Cluster 4: ", head(Pig_markers4$gene)))
+
+# Cluster 12- Amacrine, TRFAP2B
+Pig_markers12 <- FindMarkers(Pig, ident.1 = "12")
+rownames(head(Pig_markers12, 20))
+
+# Cluster 13 - debris, mostly mitochondrial genes
+Pig_markers13 <- FindMarkers(Pig, ident.1 = "13")
+head(Pig_markers13, 20)
+
+# Cluster 15 - glia (astrocyte, GFAP), annotate as other
+Pig_markers15 <- FindMarkers(Pig, ident.1 = "15")
+head(Pig_markers15, 20)
+
+# Cluster 33
+Pig_markers33 <- FindMarkers(Pig, ident.1 = "33")
+print(c("Cluster 33: ", head(Pig_markers33$gene)))
+
+# Cluster 40 - Amacrine - SLC6A9
+Pig_markers40 <- FindMarkers(Pig, ident.1 = "40")
+rownames(head(Pig_markers40, 20))
+
+# Cluster 41 - glia (APOE)
+Pig_markers41 <- FindMarkers(Pig, ident.1 = "41")
+head(Pig_markers41, 20)
+
+# Cluster 53 - nonneuronal (LEF1), annotate as debris
+Pig_markers53 <- FindMarkers(Pig, ident.1 = "53")
+head(Pig_markers53, 20)
+
+# Cluster 57 - microglia (C1QA, C1QB)
+Pig_markers57 <- FindMarkers(Pig, ident.1 = "57")
+head(Pig_markers57, 20)
+
+```
+
+
+
+Plot cell type by file
+```{r}
+Pig <- readRDS("../Species_Objects/Pig_initial.rds")
+counts <- table(Pig@meta.data$cell_class, Pig@meta.data$orig.file)
+counts
+counts <- t(t(counts) / colSums(counts))
+barplot(counts, legend = rownames(counts), col= c("red","orange","yellow","green","blue", "black", "white"))
+```
+
+
+## RGC clustering analysis
+Create separate RGC object
+```{r}
+Pig <- readRDS("../Species_Objects/Pig_initial.rds")
+
+# Only keep RGCs
+Idents(Pig) <- "cell_class"
+Pig_RGC <- subset(Pig, cells = WhichCells(Pig, idents ="RGC"))
+
+# Remove cells from samples that do not enrich for RGCs
+Idents(Pig_RGC) <- "orig.file"
+Pig_RGC <- subset(Pig_RGC, cells =  WhichCells(Pig_RGC, idents =c("pigNucNeunPChx10N", "pigNucNeunPS3", "pigNucNeunPS2")))
+
+# Remove cells with low and high counts or features
+VlnPlot(Pig_RGC, "nCount_RNA", group.by = "orig.file", pt.size = .1)
+VlnPlot(Pig_RGC, "nFeature_RNA", group.by = "orig.file", pt.size = .1)
+
+Pig_RGC <- subset(Pig_RGC, subset = nFeature_RNA > 2500 & nCount_RNA < 30000)
+
+
+saveRDS(Pig_RGC, file = "../Species_Objects/PigRGC_v1.rds")
+```
+
+
+Batch correct Pig RGCs and run clustering pipeline
+```{r}
+# Pig_RGC <- readRDS("../Species_Objects/PigRGC_v1.rds")
+
+# Set batch information
+Pig_RGC@meta.data$animal <- 3
+Pig_RGC@meta.data[WhichCells(Pig_RGC, idents =c("pigNucNeunPChx10N")), "animal"] <- 2
+
+# Perform integration - initial integration by batch was not successful, repeat with separating each file
+obj.list <- SplitObject(Pig_RGC, split.by = "orig.file")
+for (i in 1:length(obj.list)) {
+      obj.list[[i]] <- NormalizeData(obj.list[[i]], verbose = FALSE)
+      obj.list[[i]] <- FindVariableFeatures(obj.list[[i]], selection.method = "vst", nfeatures = 2000, verbose = FALSE)
+}
+obj.anchors <- FindIntegrationAnchors(object.list = obj.list)
+Pig_RGC <- IntegrateData(anchorset = obj.anchors)
+DefaultAssay(Pig_RGC) <- "integrated"
+
+Pig_RGC <- ScaleData(Pig_RGC, verbose = FALSE)
+Pig_RGC <- RunPCA(Pig_RGC, npcs = 30, verbose = FALSE)
+ElbowPlot(Pig_RGC, ndims = 30)  
+
+# 25 PCs seems to suffciently capture the data
+nPCs <- 25
+Pig_RGC <- FindNeighbors(Pig_RGC, dims = 1:nPCs)
+# Start with a resolution parameter of 1.
+# Too many clusters: reduce to .8
+Pig_RGC <- FindClusters(Pig_RGC, resolution = .6)
+Pig_RGC <- RunTSNE(Pig_RGC, dims = 1:nPCs)
+Pig_RGC <- RunUMAP(Pig_RGC, dims = 1:nPCs)
+
+saveRDS(Pig_RGC, "~/Species_Objects/PigRGC_integrated_v1.rds")
+```
+
+Visualize initial clusters
+```{r}
+Pig_RGC <- readRDS("~/Species_Objects/PigRGC_integrated_v1.rds")
+DimPlot(Pig_RGC, label = TRUE, group.by = "integrated_snn_res.0.8")
+DimPlot(Pig_RGC, group.by = "orig.file", cells = sample(colnames(Pig_RGC)))
+VlnPlot(Pig_RGC, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(Pig_RGC, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+DotPlot(Pig_RGC, features = c("RBPMS", "SLC17A6", "POU6F2"), assay = "RNA")
+```
+
+Calculate DE markers using the Wilcoxon test to determine if clusters need to be merged
+```{r}
+Idents(Pig_RGC) <- "seurat_clusters"
+PigRGC_markers <- FindAllMarkers(Pig_RGC, assay = "RNA", only.pos = TRUE)
+saveRDS(PigRGC_markers, "../Species_Markers/PigRGCMarkers_v1.rds")
+
+PigRGC_markers <- readRDS("../Species_Markers/PigRGCMarkers_v1.rds")
+```
+
+Plot top markers for each cluster, arranged by a dendrogram
+```{r}
+Idents(Pig_RGC) <- "integrated_snn_res.0.8"
+Pig_RGC <- DendroOrder(Pig_RGC)
+Pig_RGC <- UpperCase_genes(Pig_RGC, integration = TRUE)
+
+Idents(Pig_RGC) <- "dendro_order"
+top_markers <- TopMarkers(Pig_RGC, markers = PigRGC_markers, num_markers = 2)
+
+DotPlot(Pig_RGC, features = top_markers, assay = "RNA", group.by = "dendro_order") + RotatedAxis()
+
+# saveRDS(Pig_RGC, "~/Species_Objects/PigRGC_integrated_v1.rds")
+```
+
+Merge clusters based on lack of DE genes separating them
+```{r}
+Pig_RGC <- readRDS("~/Species_Objects/PigRGC_integrated_v1.rds")
+PigRGC_markers <- readRDS("../Species_Markers/PigRGCMarkers_v1.rds")
+
+
+# 0, 1, 3 - merge
+DotPlot(Pig_RGC, features = head(subset(PigRGC_markers, cluster == 1),5)$gene, group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+
+Pig_RGC <- MergeClusters(Pig_RGC, idents = c(0,1,3), refactor = FALSE)
+
+# 5, 11 - merge
+DotPlot(Pig_RGC, features = head(subset(PigRGC_markers, cluster == 5),10)$gene, group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+DotPlot(Pig_RGC, features = head(rownames(FindMarkers(Pig_RGC, ident.1 = 5, ident.2 = 11)),10), group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+
+Pig_RGC <- MergeClusters(Pig_RGC, idents = c(5,11), refactor = FALSE)
+
+
+# 4, 28, 40 - keep separate for now
+DotPlot(Pig_RGC, features = head(subset(PigRGC_markers, cluster == 4),10)$gene, group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+DotPlot(Pig_RGC, features = head(rownames(FindMarkers(Pig_RGC, ident.1 = 4, ident.2 = 28)),10), group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+
+# Pig_RGC <- MergeClusters(Pig_RGC, idents = c(4,28), refactor = FALSE)
+
+# 12, 37 - merge
+DotPlot(Pig_RGC, features = head(subset(PigRGC_markers, cluster == 12),10)$gene, group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+DotPlot(Pig_RGC, features = head(rownames(FindMarkers(Pig_RGC, ident.1 = 12, ident.2 = 37)),10), group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+
+Pig_RGC <- MergeClusters(Pig_RGC, idents = c(12,37), refactor = TRUE)
+
+
+# 26, 32 - keep separate
+DotPlot(Pig_RGC, features = head(subset(PigRGC_markers, cluster == 26),10)$gene, group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+DotPlot(Pig_RGC, features = head(rownames(FindMarkers(Pig_RGC, ident.1 = 26, ident.2 = 32)),10), group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+
+# 21, 34 - keep separate
+DotPlot(Pig_RGC, features = head(subset(PigRGC_markers, cluster == 21),10)$gene, group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+DotPlot(Pig_RGC, features = head(rownames(FindMarkers(Pig_RGC, ident.1 = 21, ident.2 = 34)),10), group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+
+# 31, 25 - keep separate for now
+DotPlot(Pig_RGC, features = head(subset(PigRGC_markers, cluster == 31),10)$gene, group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+DotPlot(Pig_RGC, features = head(rownames(FindMarkers(Pig_RGC, ident.1 = 31, ident.2 = 25)),10), group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+
+# 16, 27 - keep separate
+DotPlot(Pig_RGC, features = head(subset(PigRGC_markers, cluster == 27),10)$gene, group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+
+
+# 30, 18: expresses similar genes to 18, but 18 has unique markers, keep separate
+DotPlot(Pig_RGC, features = head(subset(PigRGC_markers, cluster == 18),10)$gene, group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+# 15?
+DotPlot(Pig_RGC, features = head(subset(PigRGC_markers, cluster == 15),10)$gene, group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+# 38?
+
+Idents(Pig_RGC) <- "seurat_clusters"
+saveRDS(Pig_RGC, file = "../Species_Objects/PigRGC_integrated_v2.rds")
+```
+
+```{r}
+Pig_RGC <- readRDS("../Species_Objects/PigRGC_integrated_v2.rds")
+DimPlot(Pig_RGC, label = TRUE, group.by = "seurat_clusters")
+
+PigRGC_markers <- FindAllMarkers(Pig_RGC, assay = "RNA", only.pos = TRUE, test.use = "MAST",quietly = TRUE)
+saveRDS(PigRGC_markers, "../Species_Markers/PigRGCMarkers_v2.rds")
+```
+
+Convert UMAP and diagonal gene plots to files
+```{r}
+Pig_RGC <- readRDS("../Species_Objects/PigRGC_integrated_v2.rds")
+RGC_markers <- readRDS()
+
+pdf("../Figures/Species_UMAPs/PigRGC.pdf", w=4, h=4, useDingbats = FALSE)
+DimPlot(Pig_RGC, label = TRUE, group.by = "seurat_clusters") + NoLegend()
+dev.off()
+
+markers <- PlotUniqueMarkers(Pig_BC, BC_markers, edits = TRUE)
+pdf("Figures/Species_MarkerPlots/PigBC.pdf", , w=6, h=4, useDingbats = FALSE)
+dev.off()
+
+```
+
+## BC clustering analysis
+
+```{r}
+Pig <- readRDS("../Species_Objects/Pig_initial.rds")
+
+# Only keep BCs
+Idents(Pig) <- "cell_class"
+Pig_BC <- subset(Pig, cells = WhichCells(Pig, idents ="BC"))
+
+# Only include cells from single nuclei samples that enrich for BCs
+Idents(Pig_BC) <- "orig.file"
+Pig_BC <- subset(Pig_BC, cells =WhichCells(Pig_BC, idents = c("pigNucNeunNChx10P","pigNucNeunNChx10PS2","pigNucNeunNChx10PS3")))
+
+# do not include "Pig1CD90S1", "Pig1CD90S2", "Pig1CD73dpS1", "Pig1CD73dpS2" for now
+
+# Remove cells with low and high counts or features
+VlnPlot(Pig_BC, "nCount_RNA", group.by = "orig.file", pt.size = .05)
+VlnPlot(Pig_BC, "nFeature_RNA", group.by = "orig.file", pt.size = .05)
+
+Pig_BC <- subset(Pig_BC, subset = nFeature_RNA > 1000 & nCount_RNA < 25000)
+
+saveRDS(Pig_BC, file = "../Species_Objects/PigBC_v1.rds")
+```
+
+### Batch correct run clustering pipeline
+
+```{r}
+Pig_BC <- readRDS("../Species_Objects/PigBC_v1.rds")
+
+# Set batch information
+Pig_BC@meta.data$animal <- 1
+Pig_BC@meta.data[WhichCells(Pig_BC, idents =c("pigNucNeunNChx10P")), "animal"] <- 2
+Pig_BC@meta.data[WhichCells(Pig_BC, idents =c("pigNucNeunNChx10PS2","pigNucNeunNChx10PS3")), "animal"] <- 3
+
+# Perform integration: by batch was unsuccessful, run by orig.file
+obj.list <- SplitObject(Pig_BC, split.by = "orig.file")
+for (i in 1:length(obj.list)) {
+      obj.list[[i]] <- NormalizeData(obj.list[[i]], verbose = FALSE)
+      obj.list[[i]] <- FindVariableFeatures(obj.list[[i]], selection.method = "vst", nfeatures = 2000, verbose = FALSE)
+}
+obj.anchors <- FindIntegrationAnchors(object.list = obj.list)
+Pig_BC <- IntegrateData(anchorset = obj.anchors)
+DefaultAssay(Pig_BC) <- "integrated"
+
+Pig_BC <- ScaleData(Pig_BC, verbose = FALSE)
+Pig_BC <- RunPCA(Pig_BC, npcs = 40, verbose = FALSE)
+ElbowPlot(Pig_BC, ndims = 40)  
+
+# 20 PCs seems to suffciently capture the data
+nPCs <- 20
+Pig_BC <- FindNeighbors(Pig_BC, dims = 1:nPCs)
+# Start with a resolution parameter of 1
+Pig_BC <- FindClusters(Pig_BC, resolution = 1.0)
+Pig_BC <- RunTSNE(Pig_BC, dims = 1:nPCs)
+Pig_BC <- RunUMAP(Pig_BC, dims = 1:nPCs)
+
+
+# saveRDS(Pig_BC, "~/Species_Objects/PigBC_integrated_v1.rds")
+```
+
+Visualize initial clusters
+```{r}
+Pig_BC <- readRDS("~/Species_Objects/PigBC_integrated_v1.rds")
+DimPlot(Pig_BC, label = TRUE)
+DimPlot(Pig_BC, group.by = "orig.file", cells = sample(colnames(Pig_BC)))
+VlnPlot(Pig_BC, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(Pig_BC, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+```
+
+### Merge clusters
+```{r}
+PigBC_markers <- FindAllMarkers(Pig_BC, assay = "RNA", only.pos = TRUE)
+saveRDS(PigBC_markers, "../Species_Markers/PigBCMarkers_v1.rds")
+```
+
+Plot top markers for each cluster, arranged by a dendrogram
+```{r}
+Pig_BC <- DendroOrder(Pig_BC)
+
+Idents(Pig_BC) <- "dendro_order"
+top_markers <- TopMarkers(Pig_BC, markers = PigBC_markers, num_markers = 2)
+
+DotPlot(Pig_BC, features = top_markers, assay = "RNA", group.by = "dendro_order") + RotatedAxis()
+
+# saveRDS(Pig_BC, "~/Species_Objects/PigBC_integrated_v1.rds")
+```
+
+Merge clusters based on lack of DE genes separating them
+```{r}
+Pig_BC <- readRDS("~/Species_Objects/PigBC_integrated_v1.rds")
+PigBC_markers <- readRDS("../Species_Markers/PigBCMarkers_v1.rds")
+
+
+# 0, 1, 3, 5, 18 - merge
+DotPlot(Pig_BC, features = head(subset(PigBC_markers, cluster == 1),10)$gene, group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+# Also merge cluster 6
+DotPlot(Pig_BC, features = head(subset(PigBC_markers, cluster == 6),10)$gene, group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+
+Pig_BC <- MergeClusters(Pig_BC, idents = c(0,1,3,5,6,18), refactor = FALSE)
+
+# 8, 15 - merge
+DotPlot(Pig_BC, features = head(subset(PigBC_markers, cluster == 15),10)$gene, group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+DotPlot(Pig_BC, features = head(rownames(FindMarkers(Pig_BC, ident.1 = 8, ident.2 = 15)),10), group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+
+Pig_BC <- MergeClusters(Pig_BC, idents = c(8,15), refactor = FALSE)
+
+
+# 11, 4: primary difference is mitochondrial genes, merge
+DotPlot(Pig_BC, features = head(subset(PigBC_markers, cluster == 11),10)$gene, group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+DotPlot(Pig_BC, features = head(rownames(FindMarkers(Pig_BC, ident.1 = 4, ident.2 = 11, only.pos = TRUE)),10), group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+
+Pig_BC <- MergeClusters(Pig_BC, idents = c(4,11), refactor = TRUE)
+
+
+# 20, 10 - clear different markers
+DotPlot(Pig_BC, features = head(subset(PigBC_markers, cluster == 20),10)$gene, group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+
+DimPlot(Pig_BC, group.by = "seurat_clusters", label = TRUE)
+
+saveRDS(Pig_BC, file = "../Species_Objects/PigBC_integrated_v2.rds")
+```
+
+```{r}
+# Clusters 1 and 10, cluster 1 does not have genes that differentiate it from 10, merge
+markers1_10 <- FindMarkers(Pig_BC, ident.1 = 1, ident.2 = 10)
+test <- markers1_10[order(markers1_10$avg_log2FC),]
+
+Pig_BC <- MergeClusters(Pig_BC, idents = c(1,10), refactor = FALSE)
+
+```
+
+
+```{r}
+Pig_BC <- readRDS("../Species_Objects/PigBC_integrated_v2.rds")
+DimPlot(Pig_BC, label = TRUE, group.by = "seurat_clusters")
+
+PigBC_markers <- FindAllMarkers(Pig_BC, assay = "RNA", only.pos = TRUE, test.use = "MAST")
+saveRDS(PigBC_markers, "../Species_Markers/PigBCMarkers_v2.rds")
+```
+
+### Check for doublets
+```{r}
+Pig_BC <- readRDS("../Species_Objects/PigBC_integrated_v2.rds")
+
+DefaultAssay(Pig_BC) <- "RNA"
+
+# Clusters 4 is potentially AC, 11 potentially rod photoreceptors
+BC_markers=c("VSX2", "CABP5", "OTX2", "PRKCA", "TMEM215")
+AC_markers=c("TFAP2A","TFAP2B", "GAD1", "C1QL1", "C1QL2", "SLC6A9", "PAX6")
+HC_markers=c("RET", "ONECUT1","ONECUT2", "CALB1", "TPM3", "NRSN1")
+PR_markers=c("PDE6H", "CRX", "SAG", "PDC", "RHO", "ARR3")
+MG_markers=c("SLC1A3","RLBP1", "GLUL", "APOE")
+Other_markers = c("FN1", "GSN","CLDN5","RGS5")
+
+DotPlot(Pig_BC, features = c(BC_markers, AC_markers, HC_markers, PR_markers, MG_markers, Other_markers), assay = "RNA") + RotatedAxis()
+
+```
+
+```{r}
+markers4 <- FindMarkers(Pig_BC, ident.1 = 4)
+Pig_BC <- DropClusters(Pig_BC, idents = c(11,4), refactor = TRUE)
+
+
+Pig_BC@meta.data$type <- Pig_BC@meta.data$seurat_clusters
+Idents(Pig_BC) <- "type"
+DefaultAssay(Pig_BC) <- "RNA"
+saveRDS(Pig_BC, "../Species_Objects/PigBC_integrated_v3.rds")
+
+
+```
+
+
+
+
+### Convert UMAP and diagonal gene plots to files
+```{r}
+Pig_BC <- readRDS("../Species_Objects/PigBC_integrated_v3.rds")
+
+pdf("../Figures/Species_UMAPs/PigBC.pdf", w=4, h=4, useDingbats = FALSE)
+DimPlot(Pig_BC, label = TRUE, group.by = "seurat_clusters") + NoLegend()
+dev.off()
+
+markers <- PlotUniqueMarkers(Pig_BC, BC_markers, edits = TRUE)
+pdf("Figures/Species_MarkerPlots/PigBC.pdf", , w=6, h=4, useDingbats = FALSE)
+dev.off()
+
+```
+
+
+## Rods
+```{r}
+Pig <- readRDS("../Species_Objects/Pig_initial.rds")
+Idents(Pig) <- "dendro_order"
+
+Rod_markers <- c("RHO" ,"PDC", "NRL", "SAG", "GNGT1")
+Cone_markers <- c("ARR3", "GNAT2","OPN1SW")
+DotPlot(Pig, features = c(Rod_markers, Cone_markers), group.by = "dendro_order") + RotatedAxis()
+
+# Subset to rods, do preliminary clustering, and save
+Pig_Rods <- subset(Pig, idents =c(18,2,5,36))
+Pig_Rods <- ClusterSeurat(Pig_Rods)
+saveRDS(Pig_Rods, file = "../Species_Objects/PigRods_v1.rds")
+```
+
+#Photoreceptors
+```{r}
+Idents(Pig) <- "cell_class"
+Pig_PR <- subset(Pig, cells = WhichCells(Pig, idents = c("Rod", "Cone")))
+
+# Remove cells with low and high counts or features
+VlnPlot(Pig_PR, "nCount_RNA", group.by = "orig.file", pt.size = .1)
+VlnPlot(Pig_PR, "nFeature_RNA", group.by = "orig.file", pt.size = .1)
+
+Pig_PR <- subset(Pig_PR, (orig.file == "Pig1CD73dpS1") | (orig.file == "Pig1CD73dpS2") | (orig.file == "Pig1CD90S1") | (orig.file == "Pig1CD90S2") | (orig.file == "pigNucNeunNChx10N") | (orig.file == "pigNucNeunNChx10PS2") | (orig.file == "pigNucNeunNChx10PS3"))
+Pig_PR <- ClusterSeurat(Pig_PR,  numPCs = 20, integrate.by = "orig.file")
+saveRDS(Pig_PR, file = "../Species_Objects/Pig_PR_int_v1.rds")
+
+DimPlot(Pig_PR, label = TRUE)
+DimPlot(Pig_PR, group.by = "orig.file", cells = sample(colnames(Pig_PR)))
+VlnPlot(Pig_PR, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(Pig_PR, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+
+DotPlot(Pig_PR, features = Rod_markers, assay = "RNA") + RotatedAxis()
+DotPlot(Pig_PR, features = Cone_markers, assay = "RNA") + RotatedAxis()
+DotPlot(Pig_PR, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Cone_markers, Rod_markers, MG_markers, "OPN1SW", "OPN1LW", "OPN"), assay = "RNA") + RotatedAxis()
+
+#0,1, 2, 16 merge (Rods)
+#6, 11, 12, 13, 17, 18 drop
+#3, 5, 7, 8, 10 ML cone
+#9, 14, 15 S cone
+#confirm 4????
+Pig_PR <- MergeClusters(Pig_PR, idents = c(0,1,2,4,16), refactor = FALSE)
+Pig_PR <- DropClusters(Pig_PR, idents = c(6,11,12,13,17,18), refactor = FALSE)
+Pig_PR <- MergeClusters(Pig_PR, idents = c(3,5,7,8,10), refactor = FALSE)
+Pig_PR <- MergeClusters(Pig_PR, idents = c(9,14,15), refactor = FALSE)
+
+Pig_PR@meta.data$type = "MW_cone"
+Idents(Pig_PR) <- "seurat_clusters"
+Pig_PR@meta.data[WhichCells(Pig_PR, idents = 9), "type"] <- "S_cone"
+Pig_PR@meta.data[WhichCells(Pig_PR, idents = 0), "type"] <- "Rod"
+DimPlot(Pig_PR, group.by = "type", label = TRUE)
+DotPlot(Pig_PR, group.by = "type", features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Cone_markers, Rod_markers, MG_markers, "OPN1SW", "OPN1LW", "OPN"), assay = "RNA") + RotatedAxis()
+saveRDS(Pig_PR, file = "../Species_Objects/Pig_PR_int_v2.rds")
+```
+
+#Horizontal Cells
+```{r}
+Pig <- readRDS("~Downloads/Species_Initial/Pig_initial.rds")
+
+# Only keep HCs
+Idents(Pig) <- "cell_class"
+Pig_HC <- subset(Pig, cells = WhichCells(Pig, idents ="HC"))
+
+# Remove cells with low and high counts or features
+VlnPlot(Pig_HC, "nCount_RNA", group.by = "orig.file", pt.size = .1)
+VlnPlot(Pig_HC, "nFeature_RNA", group.by = "orig.file", pt.size = .1)
+
+
+Pig_HC <- subset(Pig_HC, (orig.file == "pigNucNeunNChx10N") | (orig.file == "pigNucNeunNChx10PS2") | (orig.file == "pigNucNeunNChx10PS3"))
+Pig_HC <- ClusterSeurat(Pig_HC,  numPCs = 15, integrate.by = "orig.file")
+saveRDS(Pig_HC, file = "../Species_Objects/Pig_HC_int_v1.rds")
+
+DimPlot(Pig_HC, label = TRUE)
+DimPlot(Pig_HC, group.by = "orig.file", cells = sample(colnames(Pig_HC)))
+VlnPlot(Pig_HC, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(Pig_HC, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+
+DotPlot(Pig_HC, features = HC_markers, assay = "RNA") + RotatedAxis()
+DotPlot(Pig_HC, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Cone_markers, Rod_markers, MG_markers, "TFAP2B", "TFAP2C", "ISL1"), assay = "RNA") + RotatedAxis()
+
+Pig_HC <- DropClusters(Pig_HC, idents = c(1, 2, 4), refactor = TRUE)
+DimPlot(Pig_HC, label = TRUE)
+Pig_HC <- FindNeighbors(Pig_HC, dims = 1:15)
+Pig_HC <- RunUMAP(Pig_HC, dims = 1:15)
+
+Pig_HC@meta.data$type = "HC1"
+Idents(Pig_HC) <- "seurat_clusters"
+Pig_HC@meta.data[WhichCells(Pig_HC, idents = 1), "type"] <- "H2"
+Pig_HC@meta.data[WhichCells(Pig_HC, idents = 2), "type"] <- "H1"
+DimPlot(Pig_HC, group.by = "type", label = TRUE)
+DotPlot(Pig_HC, group.by = "type", features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Cone_markers, Rod_markers, MG_markers, "TFAP2B", "TFAP2C", "ISL1"), assay = "RNA") + RotatedAxis()
+saveRDS(Pig_HC, file = "../Species_Objects/Pig_HC_int_v2.rds")
+```
+```
+

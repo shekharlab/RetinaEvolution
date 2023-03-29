@@ -1,0 +1,929 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+## Load libraries
+```{r}
+library(tidyverse)
+# library(ggtree)
+# library(velocyto.R)
+library(Seurat)
+library(SeuratDisk)
+library(ggplot2)
+source("../utils/utilFxns.R")
+source("../utils/plottingFxns.R")
+```
+
+# Periphery
+## Load data
+Set data directory and load files. 
+NOTE: velocyto is not running properly, so use cellranger for now
+```{r}
+data_dir <- "/Users/joshhahn/Google Drive File Stream/My Drive/shekharlab_data/projects/Macaque/"
+M1PerCD90S1 <- Read10X(paste0(data_dir,"MacaqueCD90S1/outs/filtered_gene_bc_matrices/MacFas_5"))
+M1PerCD90S2 <- Read10X(paste0(data_dir,"MacaqueCD90S2/outs/filtered_gene_bc_matrices/MacFas_5"))
+M1PerCD90S3 <- Read10X(paste0(data_dir,"MacaqueCD90S3/outs/filtered_gene_bc_matrices/MacFas_5"))
+M1PerCD90S4 <- Read10X(paste0(data_dir,"MacaqueCD90S4/outs/filtered_gene_bc_matrices/MacFas_5"))
+M2PerCD90S1 <- Read10X(paste0(data_dir,"MacaqueCD90S5/outs/filtered_gene_bc_matrices/MacFas_5"))
+M2PerCD90S2 <- Read10X(paste0(data_dir,"MacaqueCD90S6/outs/filtered_gene_bc_matrices/MacFas_5"))
+M3PerCD90S1 <- Read10X(paste0(data_dir,"MacaqueCD90S7/outs/filtered_gene_bc_matrices/MacFas_5"))
+M3PerCD90S2 <- Read10X(paste0(data_dir,"MacaqueCD90S8/outs/filtered_gene_bc_matrices/MacFas_5"))
+M3PerCD90S3 <- Read10X(paste0(data_dir,"MacaqueCD90S9/outs/filtered_gene_bc_matrices/MacFas_5"))
+
+M1PerCD73S1 <- Read10X(paste0(data_dir,"MacaqueCD73dpS1/outs/filtered_gene_bc_matrices/MacFas_5"))
+M1PerCD73S2 <- Read10X(paste0(data_dir,"MacaqueCD73dpS2/outs/filtered_gene_bc_matrices/MacFas_5"))
+M2PerCD73S1 <- Read10X(paste0(data_dir,"MacaqueCD73dpS3/outs/filtered_gene_bc_matrices/MacFas_5"))
+M2PerCD73S2 <- Read10X(paste0(data_dir,"MacaqueCD73dpS4/outs/filtered_gene_bc_matrices/MacFas_5"))
+M2PerMixedS1 <- Read10X(paste0(data_dir,"MacaquePeripheryMixedS1/outs/filtered_gene_bc_matrices/MacFas_5"))
+
+M4PerCD73S1 <- Read10X(paste0(data_dir,"MacaqueCD73DP2S1/outs/filtered_gene_bc_matrices/MacFas_5"))
+M4PerCD73S2 <- Read10X(paste0(data_dir,"MacaqueCD73DP2S2/outs/filtered_gene_bc_matrices/MacFas_5"))
+
+Macaque_mat <- cbind(M1PerCD90S1, M1PerCD90S2, M1PerCD90S3, M1PerCD90S4, M2PerCD90S1, M2PerCD90S2, M3PerCD90S1, M3PerCD90S2, M3PerCD90S3, M1PerCD73S1, M1PerCD73S2, M2PerCD73S1, M2PerCD73S2, M2PerMixedS1, M4PerCD73S1, M4PerCD73S2)
+```
+
+
+Create Seurat object and set file information
+```{r}
+Macaque <- CreateSeuratObject(Macaque_mat, names.delim = ":")
+
+Macaque@meta.data[colnames(M1PerCD90S1), 'orig.file'] = "MacaqueCD90S1"
+Macaque@meta.data[colnames(M1PerCD90S2), 'orig.file'] = "MacaqueCD90S2"
+Macaque@meta.data[colnames(M1PerCD90S3), 'orig.file'] = "MacaqueCD90S3"
+Macaque@meta.data[colnames(M1PerCD90S4), 'orig.file'] = "MacaqueCD90S4"
+Macaque@meta.data[colnames(M2PerCD90S1), 'orig.file'] = "MacaqueCD90S5"
+Macaque@meta.data[colnames(M2PerCD90S2), 'orig.file'] = "MacaqueCD90S6"
+Macaque@meta.data[colnames(M3PerCD90S1), 'orig.file'] = "MacaqueCD90S7"
+Macaque@meta.data[colnames(M3PerCD90S2), 'orig.file'] = "MacaqueCD90S8"
+Macaque@meta.data[colnames(M3PerCD90S3), 'orig.file'] = "MacaqueCD90S9"
+Macaque@meta.data[colnames(M1PerCD73S1), 'orig.file'] = "MacaqueCD73dpS1"
+Macaque@meta.data[colnames(M1PerCD73S2), 'orig.file'] = "MacaqueCD73dpS2"
+Macaque@meta.data[colnames(M2PerCD73S1), 'orig.file'] = "MacaqueCD73dpS3"
+Macaque@meta.data[colnames(M2PerCD73S2), 'orig.file'] = "MacaqueCD73dpS4"
+Macaque@meta.data[colnames(M2PerMixedS1), 'orig.file'] = "MacaquePeripheryMixedS1"
+Macaque@meta.data[colnames(M4PerCD73S1), 'orig.file'] = "MacaqueCD73DP2S1"
+Macaque@meta.data[colnames(M4PerCD73S2), 'orig.file'] = "MacaqueCD73DP2S2"
+
+Macaque@meta.data[colnames(M1PerCD90S1), 'animal'] = 1
+Macaque@meta.data[colnames(M1PerCD90S2), 'animal'] = 1
+Macaque@meta.data[colnames(M1PerCD90S3), 'animal'] = 1
+Macaque@meta.data[colnames(M1PerCD90S4), 'animal'] = 1
+Macaque@meta.data[colnames(M2PerCD90S1), 'animal'] = 2
+Macaque@meta.data[colnames(M2PerCD90S2), 'animal'] = 2
+Macaque@meta.data[colnames(M3PerCD90S1), 'animal'] = 3
+Macaque@meta.data[colnames(M3PerCD90S2), 'animal'] = 3
+Macaque@meta.data[colnames(M3PerCD90S3), 'animal'] = 3
+Macaque@meta.data[colnames(M1PerCD73S1), 'animal'] = 4
+Macaque@meta.data[colnames(M1PerCD73S2), 'animal'] = 4
+Macaque@meta.data[colnames(M2PerCD73S1), 'animal'] = 5
+Macaque@meta.data[colnames(M2PerCD73S2), 'animal'] = 5
+Macaque@meta.data[colnames(M2PerMixedS1), 'animal'] = 5
+Macaque@meta.data[colnames(M4PerCD73S1), 'animal'] = 6
+Macaque@meta.data[colnames(M4PerCD73S2), 'animal'] = 6
+
+Macaque@meta.data[, 'tag'] = "none"
+Macaque@meta.data[colnames(M1PerCD90S1), 'tag'] = "M1PerCD90S1"
+Macaque@meta.data[colnames(M1PerCD90S2), 'tag'] = "M1PerCD90S2"
+Macaque@meta.data[colnames(M1PerCD90S3), 'tag'] = "M1PerCD90S3"
+Macaque@meta.data[colnames(M1PerCD90S4), 'tag'] = "M1PerCD90S4"
+Macaque@meta.data[colnames(M2PerCD90S1), 'tag'] = "M2PerCD90S1"
+Macaque@meta.data[colnames(M2PerCD90S2), 'tag'] = "M2PerCD90S2"
+Macaque@meta.data[colnames(M3PerCD90S1), 'tag'] = "M3PerCD90S1"
+Macaque@meta.data[colnames(M3PerCD90S2), 'tag'] = "M3PerCD90S2"
+Macaque@meta.data[colnames(M3PerCD90S3), 'tag'] = "M3PerCD90S3"
+Macaque@meta.data[colnames(M1PerCD73S1), 'tag'] = "M1PerCD73S1"
+Macaque@meta.data[colnames(M1PerCD73S2), 'tag'] = "M1PerCD73S2"
+Macaque@meta.data[colnames(M2PerCD73S1), 'tag'] = "M2PerCD73S1"
+Macaque@meta.data[colnames(M2PerCD73S2), 'tag'] = "M2PerCD73S2"
+Macaque@meta.data[colnames(M2PerMixedS1), 'tag'] = "M2PerMixedS1"
+Macaque@meta.data[colnames(M4PerCD73S1), 'tag'] = "M4PerCD73S1"
+Macaque@meta.data[colnames(M4PerCD73S2), 'tag'] = "M4PerCD73S2"
+
+saveRDS(Macaque, "../Species_Objects/Macaque_initial.rds")
+```
+
+```{r}
+VlnPlot(Macaque, features = "nCount_RNA", pt.size = 0, group.by = "tag")
+VlnPlot(Macaque, features = "nFeature_RNA", pt.size = 0, group.by = "tag")
+```
+
+
+## Cell class annotation
+
+```{r}
+Macaque <- ClusterSeurat(Macaque)
+saveRDS(Macaque, file = "../Species_Objects/Macaque_initial.rds")
+```
+
+### Visualize initial clusters
+```{r}
+# Macaque <- readRDS("../Species_Objects/Macaque_initial.rds")
+DimPlot(Macaque, label = TRUE)
+DimPlot(Macaque, group.by = "tag", cells = sample(colnames(Macaque)))
+DimPlot(Macaque, group.by = "animal", cells = sample(colnames(Macaque)))
+VlnPlot(Macaque, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(Macaque, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+```
+
+### Look for major retinal cell classes
+```{r}
+# Macaque <- DendroOrder(Macaque)
+Macaque <- UpperCase_genes(Macaque)
+
+RGC_markers= c("RBPMS", "SLC17A6", "POU6F2", "SNCG", "SYT2")
+BC_markers=c("VSX2", "CABP5", "OTX2", "PRKCA", "TMEM215")
+AC_markers=c("TFAP2A","TFAP2B", "GAD1", "C1QL1", "C1QL2", "SLC6A9")
+HC_markers=c("RET", "ONECUT1","ONECUT2", "CALB1", "TPM3", "NRSN1")
+PR_markers=c("PDE6H", "CRX", "SAG", "PDC", "RHO", "ARR3")
+MG_markers=c("SLC1A3","RLBP1", "GLUL", "APOE")
+Other_markers = c("FN1", "GSN","CLDN5","RGS5")
+
+DotPlot(Macaque, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, PR_markers, MG_markers, Other_markers), group.by = "dendro_order") + RotatedAxis()
+```
+
+### Annotate clusters using DE genes and Dot plot of marker genes
+```{r}
+Idents(Macaque) <- "seurat_clusters"
+Macaque_genes <- FindAllMarkers(Macaque)
+saveRDS(Macaque_genes, file = "../Marker_Genes/Macaque_genes_initial.rds")
+```
+
+
+```{r}
+Macaque@meta.data$cell_class = "N/A"
+Macaque@meta.data[WhichCells(Macaque, idents =c(9,25,27,21,2,43, 26, 11)),]$cell_class = "RGC"
+Macaque@meta.data[WhichCells(Macaque, idents = c(36,12,16,39, 31, 23, 10, 31, 23)),]$cell_class = "BC"
+Macaque@meta.data[WhichCells(Macaque, idents = c(13,15,33,38, 7, 29, 34, 24, 32, 35,19,30,40, 1, 20, 0, 5)),]$cell_class = "AC"
+Macaque@meta.data[WhichCells(Macaque, idents = c(15, 33)),]$cell_class = "HC"
+Macaque@meta.data[WhichCells(Macaque, idents = c(42,28,14,37, 39)),]$cell_class = "PR"
+Macaque@meta.data[WhichCells(Macaque, idents = c(4,22,8,45,6,17,18,44)),]$cell_class = "MG"
+Macaque@meta.data[WhichCells(Macaque, idents = c(41,3)),]$cell_class = "Other"
+
+
+DimPlot(Macaque, group.by = "cell_class")
+
+saveRDS(Macaque, "../Species_Objects/Macaque_initial.rds")
+
+```
+
+### Investigate unmarked clusters to see if they have any unique markers
+```{r}
+# 10 - BP, expresses VSX1
+Maca_mark10 <- FindMarkers(Macaque, ident.1 = "10")
+head(Maca_mark10, 20)
+# 26 - annotate as RGC, likely low quality
+Maca_mark26 <- FindMarkers(Macaque, ident.1 = "26")
+head(Maca_mark26, 20)
+# 39 - PR, top gene is RHO
+Maca_mark39 <- FindMarkers(Macaque, ident.1 = "39")
+head(Maca_mark39, 20)
+# 11 - inconclusive markers, but annotate as RGC based on proximity in dendrogram and UMAP to other RGC clusters
+Maca_mark11 <- FindMarkers(Macaque, ident.1 = "11")
+head(Maca_mark11, 20)
+# 1 -  AC - SLC6A9
+Maca_mark1 <- FindMarkers(Macaque, ident.1 = "1")
+head(Maca_mark1, 20)
+# 20 - AC - SLC6A9
+Maca_mark20 <- FindMarkers(Macaque, ident.1 = "20")
+# 31 - BC- OTX2
+Maca_mark31 <- FindMarkers(Macaque, ident.1 = "31")
+head(Maca_mark31, 20)
+# 23 - BC - CABP5
+Maca_mark23 <- FindMarkers(Macaque, ident.1 = "23")
+head(Maca_mark23, 20)
+# 0 - AC - related to cluster 5
+Maca_mark0 <- FindMarkers(Macaque, ident.1 = "0")
+head(Maca_mark0, 20)
+# 5 - AC - SLC6A9
+Maca_mark5 <- FindMarkers(Macaque, ident.1 = "5")
+head(Maca_mark5, 20)
+# 3 - other
+Maca_mark3 <- FindMarkers(Macaque, ident.1 = "3")
+# 41 - other
+Maca_mark41 <- FindMarkers(Macaque, ident.1 = "41")
+```
+
+
+### Plot cell type by file
+```{r}
+Macaque <- readRDS("../Species_Objects/Macaque_initial.rds")
+counts <- table(Macaque@meta.data$cell_class, Macaque@meta.data$orig.file)
+counts
+counts <- t(t(counts) / colSums(counts))
+barplot(counts, legend = rownames(counts), col= c("red","orange","yellow","green","blue", "black", "white"))
+```
+
+### Collapse positive and negative gene names - unsuccessful
+```{r}
+# V1
+Macaque <- readRDS("../Species_Objects/Macaque_initial.rds")
+N_genes_index <- grep("-N$", rownames(Macaque))
+N_genes_names <- grep("-N$", rownames(Macaque), value = TRUE)
+for(i in 1:length(N_genes_names)){
+  N_gene <- N_genes_names[i]
+  N_index <- N_genes_index[i]
+  P_gene <- gsub("-N$", "-P", N_gene)
+  # Add -N and -P counts together in the -N row
+  Macaque@assays$RNA@counts[N_gene,] <- Macaque@assays$RNA@counts[N_gene,] + Macaque@assays$RNA@counts[P_gene,] 
+  # Rename the -N row
+  rownames(Macaque@assays$RNA@counts)[N_index] <- gsub("-N$", "", N_gene)
+}
+
+# Remove all -P rows
+Macaque@assays$RNA@counts <- Macaque@assays$RNA@counts[-c(grep("-P$", rownames(Macaque))),]
+
+# V2
+groupings <- rep(0, length(rownames(Macaque)))
+index = 1
+new_rownames <- c()
+
+for(i in 1:length(rownames(Macaque)) ){
+  # If -N or -P has been detected previously, skip to the next loop call
+  if(groupings[i] > 0){
+    next()
+  }
+
+  gene <- rownames(Macaque)[i]
+  groupings[i] <- index
+  
+  if(substring(gene, first = nchar(gene)-1) == "-N"){
+    # Find matching gene, and set it's grouping variable
+    groupings[grep(gsub("-N$", "-P", gene), rownames(Macaque))] <- index
+    # Update new rownames
+    new_rownames <- c(new_rownames, gsub("-N$", "", gene))
+  }
+  else if(substring(gene, first = nchar(gene)-1) == "-P"){
+    # Find matching gene, and set it's grouping variable
+    groupings[grep(gsub("-P$", "-N", gene), rownames(Macaque))] <- index
+    # Update new rownames
+    new_rownames <- c(new_rownames, gsub("-P$", "", gene))
+  }
+  else{
+    # Update new rownames
+    new_rownames <- c(new_rownames, gene)
+  }
+  index <- index + 1
+}
+    
+
+# V3
+Macaque <- readRDS("../Species_Objects/Macaque_initial.rds")
+new_mat <- Macaque@assays$RNA@counts[1:2,]
+use <- rep(TRUE, length(rownames(Macaque)))
+for(i in 1:length(N_genes_names)){
+  if(use[i]){
+    gene <- rownames(Macaque)[i]
+    if(substring(gene, first = nchar(gene)-1) == "-N"){
+    # Find matching gene, and skip it later
+    use[grep(gsub("-N$", "-P", gene), rownames(Macaque))] <- FALSE
+    # Update new rownames
+    new_rownames <- c(new_rownames, gsub("-N$", "", gene))
+  }
+  else if(substring(gene, first = nchar(gene)-1) == "-P"){
+    # Find matching gene, and set it's grouping variable
+    groupings[grep(gsub("-P$", "-N", gene), rownames(Macaque))] <- index
+    # Update new rownames
+    new_rownames <- c(new_rownames, gsub("-P$", "", gene))
+  }
+  else{
+    # Update new rownames
+    new_rownames <- c(new_rownames, gene)
+  }
+  N_index <- N_genes_index[i]
+  P_gene <- gsub("-N$", "-P", N_gene)
+  # Add -N and -P counts together in the -N row
+  Macaque@assays$RNA@counts[N_gene,] <- Macaque@assays$RNA@counts[N_gene,] + Macaque@assays$RNA@counts[P_gene,] 
+  # Rename the -N row
+  rownames(Macaque@assays$RNA@counts)[N_index] <- gsub("-N$", "", N_gene)
+}
+
+# Remove all -P rows
+Macaque@assays$RNA@counts <- Macaque@assays$RNA@counts[-c(grep("-P$", rownames(Macaque))),]
+```
+
+### Collapse -N -P genes
+```{r}
+# V4
+Macaque <- readRDS("../Species_Objects/Macaque_initial.rds")
+saveRDS(Macaque, "../Species_Objects/Macaque_initial_uncollapsed.rds")
+count_mat <- Macaque@assays$RNA@counts
+
+# Extract rows that do not end in -N or -P
+N_genes_index <- grep("-N$", rownames(count_mat))
+P_genes_index <- grep("-P$", rownames(count_mat))
+good_mat <- count_mat[-c(N_genes_index, P_genes_index),]
+bad_mat <- count_mat[c(N_genes_index, P_genes_index),]
+
+# Factor gene names, use to collapse bad_mat
+groupings <- as.factor(substr(rownames(bad_mat),1,nchar(rownames(bad_mat))-2))
+collapsed_mat <- rowsum(as.data.frame(bad_mat), group = groupings)
+
+# Bind good_mat and collapsed_mat together to create new count matrix
+new_mat <- rbind(good_mat, as(as.matrix(collapsed_mat), "sparseMatrix"))
+
+# Generate new object
+Macaque_v2 <- CreateSeuratObject(new_mat)
+Macaque_v2 <- ClusterSeurat(Macaque_v2)
+
+# Import metadata from old object
+Macaque_v2@meta.data <- Macaque@meta.data
+saveRDS(Macaque_v2, "../Species_Objects/Macaque_initial.rds")
+```
+
+
+
+## Import cluster labels
+```{r}
+meta <- read.csv("../Species_Reference/Macaque_NN_RGC_AC_BC_HC_PR_metadata_3.txt")
+meta <- meta[2:dim(meta)[1],]
+rownames(meta) <- meta$NAME
+meta$NAME <- NULL
+
+# Format velocyto labels to match appropriately
+barcode <- function(string){
+  tag <- Macaque@meta.data[string, "tag"]
+  name <- paste0(tag, "_", string)
+  return(name)
+}
+new_names <- unlist(lapply(colnames(Macaque), barcode))
+Macaque@meta.data$barcode <- new_names
+Macaque@meta.data$annotated <- meta[Macaque@meta.data$barcode, "Cluster"]
+
+# Remove cells not present in the atlas
+Macaque@meta.data$keep <- !is.na(Macaque@meta.data$annotated)
+Idents(Macaque) <- "keep"
+Macaque <- subset(Macaque, idents = TRUE)
+Macaque@meta.data$keep <- NULL
+Macaque@meta.data$cell_class <- NULL
+
+saveRDS(Macaque, "../Species_Objects/Macaque_initial_annotated.rds")
+```
+
+Separate into RGC objects and BC objects
+```{r}
+Macaque <- readRDS("../Species_Objects/Macaque_initial_annotated.rds")
+
+Idents(Macaque) <- "annotated"
+Macaque_RGC <- subset(Macaque, idents = c(paste0("pRGC", 5:18), "PG_ON", "PG_OFF", "MG_ON", "MG_OFF"))
+
+saveRDS(Macaque_RGC, "../Species_Objects/MacaqueRGC_ann.rds")
+
+Macaque_BC <- subset(Macaque, idents = c("FMB","DB1", "DB2","DB3a","DB3b", "IMB","DB4","BB/GB*","DB6","DB5*", "RB"))
+
+saveRDS(Macaque_BC, "../Species_Objects/MacaqueBC_ann.rds")
+```
+
+## Integrate RGC and BC objects
+
+Batch correct Macaque RGCs and run clustering pipeline
+
+```{r}
+Macaque_RGC <- readRDS("../Species_Objects/MacaqueRGC_ann.rds")
+
+obj.list <- SplitObject(Macaque_RGC, split.by = "animal")
+for (i in 1:length(obj.list)) {
+      obj.list[[i]] <- NormalizeData(obj.list[[i]], verbose = FALSE)
+      obj.list[[i]] <- FindVariableFeatures(obj.list[[i]], selection.method = "vst", nfeatures = 2000, verbose = FALSE)
+}
+obj.anchors <- FindIntegrationAnchors(object.list = obj.list)
+Macaque_RGC <- IntegrateData(anchorset = obj.anchors)
+DefaultAssay(Macaque_RGC) <- "integrated"
+
+Macaque_RGC <- ScaleData(Macaque_RGC, verbose = FALSE)
+Macaque_RGC <- RunPCA(Macaque_RGC, npcs = 30, verbose = FALSE)
+Macaque_RGC <- RunUMAP(Macaque_RGC, reduction = "pca", dims = 1:30)
+
+DimPlot(Macaque_RGC, group.by = "annotated", label = TRUE)
+
+saveRDS(Macaque_RGC, "~/Species_Objects/MacaqueRGC_int_ann_v1.rds")
+```
+
+```{r}
+Macaque_BC <- readRDS("../Species_Objects/MacaqueBC_ann.rds")
+
+obj.list <- SplitObject(Macaque_BC, split.by = "animal")
+for (i in 1:length(obj.list)) {
+      obj.list[[i]] <- NormalizeData(obj.list[[i]], verbose = FALSE)
+      obj.list[[i]] <- FindVariableFeatures(obj.list[[i]], selection.method = "vst", nfeatures = 2000, verbose = FALSE)
+}
+obj.anchors <- FindIntegrationAnchors(object.list = obj.list)
+Macaque_BC <- IntegrateData(anchorset = obj.anchors)
+DefaultAssay(Macaque_BC) <- "integrated"
+
+Macaque_BC <- ScaleData(Macaque_BC, verbose = FALSE)
+Macaque_BC <- RunPCA(Macaque_BC, npcs = 30, verbose = FALSE)
+Macaque_BC <- RunUMAP(Macaque_BC, reduction = "pca", dims = 1:30)
+
+DimPlot(Macaque_BC, group.by = "annotated", label = TRUE)
+
+saveRDS(Macaque_BC, "~/Species_Objects/MacaqueBC_int_ann_v1.rds")
+```
+
+Convert UMAP and diagonal gene plots to files
+```{r}
+Macaque_RGC <- readRDS("../Species_Objects/MacaqueRGC_int_ann_v1.rds")
+Macaque_BC <- readRDS("../Species_Objects/MacaqueBC_int_ann_v1.rds")
+
+Idents(Macaque_RGC) <- "annotated"
+Idents(Macaque_BC) <- "annotated"
+
+pdf("../Figures/Species_UMAPs/MacaqueRGC.pdf", w=4, h=4, useDingbats = FALSE)
+DimPlot(Macaque_RGC, label = TRUE) + NoLegend()
+dev.off()
+
+pdf("../Figures/Species_UMAPs/MacaqueBC.pdf", w=4, h=4, useDingbats = FALSE)
+DimPlot(Macaque_BC, label = TRUE) + NoLegend()
+dev.off()
+```
+
+# Fovea
+### Load data
+Set data directory and load files. 
+NOTE: velocyto is not running properly, so use cellranger for now
+```{r}
+data_dir <- "/Users/joshhahn/Google Drive File Stream/My Drive/shekharlab_data/projects/Macaque/"
+M1FoveaS1 <- Read10X(paste0(data_dir,"M1Fovea1/MacFas_5"))
+colnames(M1FoveaS1) <- paste0("M1FoveaS1:", colnames(M1FoveaS1))
+M1FoveaS2 <- Read10X(paste0(data_dir,"M1Fovea2/MacFas_5"))
+colnames(M1FoveaS2) <- paste0("M1FoveaS2:", colnames(M1FoveaS2))
+M1FoveaS3 <- Read10X(paste0(data_dir,"M1Fovea3/MacFas_5"))
+colnames(M1FoveaS3) <- paste0("M1FoveaS3:", colnames(M1FoveaS3))
+M1FoveaS4 <- Read10X(paste0(data_dir,"M1Fovea4/MacFas_5"))
+colnames(M1FoveaS4) <- paste0("M1FoveaS4:", colnames(M1FoveaS4))
+M1FoveaS5 <- Read10X(paste0(data_dir,"M1Fovea5/MacFas_5"))
+colnames(M1FoveaS5) <- paste0("M1FoveaS5:", colnames(M1FoveaS5))
+M1FoveaS6 <- Read10X(paste0(data_dir,"M1Fovea6/MacFas_5"))
+colnames(M1FoveaS6) <- paste0("M1FoveaS6:", colnames(M1FoveaS6))
+M1FoveaS7 <- Read10X(paste0(data_dir,"M1Fovea7/MacFas_5"))
+colnames(M1FoveaS7) <- paste0("M1FoveaS7:", colnames(M1FoveaS7))
+M1FoveaS8 <- Read10X(paste0(data_dir,"M1Fovea8/MacFas_5"))
+colnames(M1FoveaS8) <- paste0("M1FoveaS8:", colnames(M1FoveaS8))
+
+
+M2FoveaS1 <- Read10X(paste0(data_dir,"M2Fovea1/MacFas_5"))
+colnames(M2FoveaS1) <- paste0("M2FoveaS1:", colnames(M2FoveaS1))
+M2FoveaS2 <- Read10X(paste0(data_dir,"M2Fovea2/MacFas_5"))
+colnames(M2FoveaS2) <- paste0("M2FoveaS2:", colnames(M2FoveaS2))
+M2FoveaS3 <- Read10X(paste0(data_dir,"M2Fovea3/MacFas_5"))
+colnames(M2FoveaS3) <- paste0("M2FoveaS3:", colnames(M2FoveaS3))
+M2FoveaS4 <- Read10X(paste0(data_dir,"M2Fovea4/MacFas_5"))
+colnames(M2FoveaS4) <- paste0("M2FoveaS4:", colnames(M2FoveaS4))
+M2FoveaS5 <- Read10X(paste0(data_dir,"M2Fovea5/MacFas_5"))
+colnames(M2FoveaS5) <- paste0("M2FoveaS5:", colnames(M2FoveaS5))
+M2FoveaS6 <- Read10X(paste0(data_dir,"M2Fovea6/MacFas_5"))
+colnames(M2FoveaS6) <- paste0("M2FoveaS6:", colnames(M2FoveaS6))
+M2FoveaS7 <- Read10X(paste0(data_dir,"M2Fovea7/MacFas_5"))
+colnames(M2FoveaS7) <- paste0("M2FoveaS7:", colnames(M2FoveaS7))
+M2FoveaS8 <- Read10X(paste0(data_dir,"M2Fovea8/MacFas_5"))
+colnames(M2FoveaS8) <- paste0("M2FoveaS8:", colnames(M2FoveaS8))
+
+M3FoveaS1 <- Read10X(paste0(data_dir,"M3FoveaS1/MacFas_5"))
+colnames(M3FoveaS1) <- paste0("M3FoveaS1:", colnames(M3FoveaS1))
+M3FoveaS2 <- Read10X(paste0(data_dir,"M3FoveaS2/MacFas_5"))
+colnames(M3FoveaS2) <- paste0("M3FoveaS2:", colnames(M3FoveaS2))
+M3FoveaS3 <- Read10X(paste0(data_dir,"M3FoveaS3/MacFas_5"))
+colnames(M3FoveaS3) <- paste0("M3FoveaS3:", colnames(M3FoveaS3))
+
+M4FoveaS1 <- Read10X(paste0(data_dir,"M4FoveaS1/MacFas_5"))
+colnames(M4FoveaS1) <- paste0("M4FoveaS1:", colnames(M4FoveaS1))
+M4FoveaS2 <- Read10X(paste0(data_dir,"M4FoveaS2/MacFas_5"))
+colnames(M4FoveaS2) <- paste0("M4FoveaS2:", colnames(M4FoveaS2))
+M4FoveaS3 <- Read10X(paste0(data_dir,"M4FoveaS3/MacFas_5"))
+colnames(M4FoveaS3) <- paste0("M4FoveaS3:", colnames(M4FoveaS3))
+
+
+Macaque_mat <- cbind(M1FoveaS1,M1FoveaS2,M1FoveaS3,M1FoveaS4,M1FoveaS5,M1FoveaS6,M1FoveaS7,M1FoveaS8,M2FoveaS1, M2FoveaS2,M2FoveaS3,M2FoveaS4,M2FoveaS5,M2FoveaS6,M2FoveaS7,M2FoveaS8,M3FoveaS1,M3FoveaS2,M3FoveaS3,M4FoveaS1,M4FoveaS2,M4FoveaS3)
+```
+
+### Collapse -N -P genes
+```{r}
+# Extract rows that do not end in -N or -P
+N_genes_index <- grep("_n$", rownames(Macaque_mat))
+P_genes_index <- grep("_p$", rownames(Macaque_mat))
+good_mat <- Macaque_mat[-c(N_genes_index, P_genes_index),]
+bad_mat <- Macaque_mat[c(N_genes_index, P_genes_index),]
+
+# Factor gene names, use to collapse bad_mat
+groupings <- as.factor(substr(rownames(bad_mat),1,nchar(rownames(bad_mat))-2))
+collapsed_mat <- rowsum(as.data.frame(bad_mat), group = groupings)
+
+# Bind good_mat and collapsed_mat together to create new count matrix
+Macaque_mat <- rbind(good_mat, as(as.matrix(collapsed_mat), "sparseMatrix"))
+```
+
+
+### Create object
+Create Seurat object and set file information
+```{r}
+Macaque <- CreateSeuratObject(Macaque_mat, names.delim = ":")
+
+Macaque@meta.data[colnames(M1FoveaS1), 'orig.file'] = "M1FoveaS1"
+Macaque@meta.data[colnames(M1FoveaS2), 'orig.file'] = "M1FoveaS2"
+Macaque@meta.data[colnames(M1FoveaS3), 'orig.file'] = "M1FoveaS3"
+Macaque@meta.data[colnames(M1FoveaS4), 'orig.file'] = "M1FoveaS4"
+Macaque@meta.data[colnames(M1FoveaS5), 'orig.file'] = "M1FoveaS5"
+Macaque@meta.data[colnames(M1FoveaS6), 'orig.file'] = "M1FoveaS6"
+Macaque@meta.data[colnames(M1FoveaS7), 'orig.file'] = "M1FoveaS7"
+Macaque@meta.data[colnames(M1FoveaS8), 'orig.file'] = "M1FoveaS8"
+
+Macaque@meta.data[colnames(M2FoveaS1), 'orig.file'] = "M2FoveaS1"
+Macaque@meta.data[colnames(M2FoveaS2), 'orig.file'] = "M2FoveaS2"
+Macaque@meta.data[colnames(M2FoveaS3), 'orig.file'] = "M2FoveaS3"
+Macaque@meta.data[colnames(M2FoveaS4), 'orig.file'] = "M2FoveaS4"
+Macaque@meta.data[colnames(M2FoveaS5), 'orig.file'] = "M2FoveaS5"
+Macaque@meta.data[colnames(M2FoveaS6), 'orig.file'] = "M2FoveaS6"
+Macaque@meta.data[colnames(M2FoveaS7), 'orig.file'] = "M2FoveaS7"
+Macaque@meta.data[colnames(M2FoveaS8), 'orig.file'] = "M2FoveaS8"
+
+Macaque@meta.data[colnames(M3FoveaS1), 'orig.file'] = "M3FoveaS1"
+Macaque@meta.data[colnames(M3FoveaS2), 'orig.file'] = "M3FoveaS2"
+Macaque@meta.data[colnames(M3FoveaS3), 'orig.file'] = "M3FoveaS3"
+
+Macaque@meta.data[colnames(M4FoveaS1), 'orig.file'] = "M4FoveaS1"
+Macaque@meta.data[colnames(M4FoveaS2), 'orig.file'] = "M4FoveaS2"
+Macaque@meta.data[colnames(M4FoveaS3), 'orig.file'] = "M4FoveaS3"
+
+saveRDS(Macaque, "../Species_Objects/MacaqueFovea_initial.rds")
+```
+
+### Import cluster labels
+```{r}
+meta <- read.csv("../Species_Reference/Macaque_NN_RGC_AC_BC_HC_PR_metadata_3.txt")
+meta <- meta[2:dim(meta)[1],]
+rownames(meta) <- meta$NAME
+meta$NAME <- NULL
+
+Macaque@meta.data$barcode <- str_replace_all(str_remove_all(colnames(Macaque), "S"), ":", "_")
+Macaque@meta.data$annotated <- meta[Macaque@meta.data$barcode, "Cluster"]
+
+# Remove cells not present in the atlas
+Macaque@meta.data$keep <- !is.na(Macaque@meta.data$annotated)
+Idents(Macaque) <- "keep"
+Macaque <- subset(Macaque, idents = TRUE)
+Macaque@meta.data$keep <- NULL
+Macaque@meta.data$cell_class <- NULL
+
+saveRDS(Macaque, "../Species_Objects/MacaqueFovea_initial_annotated.rds")
+```
+
+### Separate into RGC objects and BC objects
+```{r}
+Macaque <- readRDS("../Species_Objects/MacaqueFovea_initial_annotated.rds")
+
+Idents(Macaque) <- "annotated"
+Macaque_RGC <- subset(Macaque, idents = c(paste0("fRGC", 5:16), "PG_ON", "PG_OFF", "MG_ON", "MG_OFF"))
+
+saveRDS(Macaque_RGC, "../Species_Objects/MacaqueFovea_RGC_ann.rds")
+
+Macaque_BC <- subset(Macaque, idents = c("FMB","DB1","OFFx", "DB2","DB3a","DB3b", "IMB","DB4","BB/GB*","DB6","DB5*", "RB"))
+
+saveRDS(Macaque_BC, "../Species_Objects/MacaqueFovea_BC_ann.rds")
+```
+
+
+
+## Rods
+```{r}
+Macaque <- readRDS("../Species_Objects/Macaque_initial_annotated.rds")
+
+Idents(Macaque) <- "annotated"
+Macaque_Rods <- subset(Macaque, idents = c("Rods"))
+Macaque_Rods <- ClusterSeurat(Macaque_Rods)
+saveRDS(Macaque_Rods, file = "../Species_Objects/MacaqueRods_v1.rds")
+```
+
+
+
+# Velocyto Data
+
+## Fovea
+### Load velocyto data
+```{r}
+# Load test data
+data_dir <- "/Users/joshhahn/Google Drive File Stream/My Drive/shekharlab_data/projects/Macaque_v2/"
+
+Macaque_mat <- NULL
+
+for(i in c(1:2, 4:8)){
+  file_dir <- paste0(data_dir, "M1Fovea", i, "/velo_outs/")
+  #Convert(paste0(file_dir, "full.h5ad"), dest = "h5seurat")
+  file_obj <- LoadH5Seurat(paste0(file_dir, "full.h5seurat"))
+  count_mat <- file_obj@assays$matrix@counts
+  colnames(count_mat) <- paste0("M1Fovea", i, substr(colnames(count_mat), 27, 44))
+  if(is.null(Macaque_mat)){
+    Macaque_mat <- count_mat
+  }
+  else{
+    Macaque_mat <- cbind(Macaque_mat, count_mat)
+  }
+}
+
+for(i in 1:8){
+  file_dir <- paste0(data_dir, "M2Fovea", i, "/velo_outs/")
+  #Convert(paste0(file_dir, "full.h5ad"), dest = "h5seurat")
+  file_obj <- LoadH5Seurat(paste0(file_dir, "full.h5seurat"))
+  count_mat <- file_obj@assays$matrix@counts
+  colnames(count_mat) <- paste0("M2Fovea", i, substr(colnames(count_mat), 27, 44))
+  Macaque_mat <- cbind(Macaque_mat, count_mat)
+}
+
+for(i in 1:3){
+  file_dir <- paste0(data_dir, "M3Fovea", i, "/velo_outs/")
+  #Convert(paste0(file_dir, "full.h5ad"), dest = "h5seurat")
+  file_obj <- LoadH5Seurat(paste0(file_dir, "full.h5seurat"))
+  count_mat <- file_obj@assays$matrix@counts
+  colnames(count_mat) <- paste0("M3Fovea", i, substr(colnames(count_mat), 27, 44))
+  Macaque_mat <- cbind(Macaque_mat, count_mat)
+}
+
+for(i in 1:3){
+  file_dir <- paste0(data_dir, "M4Fovea", i, "/velo_outs/")
+  #Convert(paste0(file_dir, "full.h5ad"), dest = "h5seurat")
+  file_obj <- LoadH5Seurat(paste0(file_dir, "full.h5seurat"))
+  count_mat <- file_obj@assays$matrix@counts
+  colnames(count_mat) <- paste0("M4Fovea", i, substr(colnames(count_mat), 27, 44))
+  Macaque_mat <- cbind(Macaque_mat, count_mat)
+}
+
+Macaque_Fovea <- CreateSeuratObject(Macaque_mat, names.delim = ":")
+saveRDS(Macaque_Fovea, "../Species_Objects/MacaqueFovea_Velocyto_initial.rds")
+```
+
+
+
+### Create Object
+```{r}
+
+Macaque_Fovea <- readRDS("../Species_Objects/MacaqueFovea_Velocyto_initial.rds")
+
+meta <- read.csv("../Species_Reference/Macaque_NN_RGC_AC_BC_HC_PR_metadata_3.txt")
+meta <- meta[2:dim(meta)[1],]
+rownames(meta) <- meta$NAME
+meta$NAME <- NULL
+
+Macaque_Fovea@meta.data$barcode <- str_replace_all(str_replace_all(colnames(Macaque_Fovea), ":", "_"), "x", "-1")
+Macaque_Fovea@meta.data$annotated <- meta[Macaque_Fovea@meta.data$barcode, "Cluster"]
+
+# Remove cells not present in the atlas
+Macaque_Fovea@meta.data$keep <- !is.na(Macaque_Fovea@meta.data$annotated)
+Idents(Macaque_Fovea) <- "keep"
+Macaque_Fovea <- subset(Macaque_Fovea, idents = TRUE)
+Macaque_Fovea@meta.data$keep <- NULL
+Macaque_Fovea@meta.data$cell_class <- NULL
+
+saveRDS(Macaque_Fovea, "../Species_Objects/MacaqueFovea_Velo_int_ann.rds")
+Macaque_Fovea <- readRDS("../Species_Objects/MacaqueFovea_Velo_int_ann.rds")
+```
+
+### Format Cell class
+```{r}
+Macaque_Fovea <- readRDS("../Species_Objects/MacaqueFovea_Velo_int_ann.rds")
+Idents(Macaque_Fovea) <- "annotated"
+
+Macaque_Fovea@meta.data$cell_class <- "Other"
+
+
+Macaque_Fovea@meta.data[WhichCells(Macaque_Fovea, idents = c(paste0("fRGC", 5:16), "PG_ON", "PG_OFF", "MG_ON", "MG_OFF")), "cell_class"] <- "RGC"
+Macaque_Fovea@meta.data[WhichCells(Macaque_Fovea, idents = c("FMB","DB1","OFFx", "DB2","DB3a","DB3b", "IMB","DB4","BB/GB*","DB6","DB5*", "RB")), "cell_class"] <- "BP"
+
+Macaque_Fovea@meta.data[WhichCells(Macaque_Fovea, idents = paste0("fGa", 1:19)), "cell_class"] <- "GabaAC"
+Macaque_Fovea@meta.data[WhichCells(Macaque_Fovea, idents = paste0("fGl", 1:8)), "cell_class"] <- "GlyAC"
+Macaque_Fovea@meta.data[WhichCells(Macaque_Fovea, idents = c("H1", "H2")), "cell_class"] <- "HC"
+Macaque_Fovea@meta.data[WhichCells(Macaque_Fovea, idents = "MG"), "cell_class"] <- "MG"
+Macaque_Fovea@meta.data[WhichCells(Macaque_Fovea, idents = "Mic"), "cell_class"] <- "MicroG"
+Macaque_Fovea@meta.data[WhichCells(Macaque_Fovea, idents = c("M/L Cones", "S Cones")), "cell_class"] <- "Cone"
+Macaque_Fovea@meta.data[WhichCells(Macaque_Fovea, idents = "Rods"), "cell_class"] <- "Rod"
+
+Macaque_Fovea@meta.data[WhichCells(Macaque_Fovea, idents = c("Endo", "Pericytes")), "cell_class"] <- "Other"
+
+saveRDS(Macaque_Fovea, "../Species_Initial/MacaqueFovea_initial.rds")
+saveRDS(Macaque_Fovea@meta.data, "../Metadata/MacaqueFovea_metadata.rds")
+```
+
+### Separate into RGC / BC
+Batch correction was not performed, as downstream tasks use just the raw RGC counts
+```{r}
+Idents(Macaque_Fovea) <- "cell_class"
+
+M_Fov_RGC <- subset(Macaque_Fovea, idents = "RGC")
+M_Fov_RGC <- ClusterSeurat(M_Fov_RGC)
+Idents(M_Fov_RGC) <- "annotated"
+saveRDS(M_Fov_RGC, "../Species_Objects/MacaqueFovea_RGC_velo_ann_v1.rds")
+  
+M_Fov_BC <- subset(Macaque_Fovea, idents = "BP")
+M_Fov_BC <- ClusterSeurat(M_Fov_BC)
+saveRDS(M_Fov_BC, "../Species_Objects/MacaqueFovea_BC_velo_ann_v1.rds")
+
+
+
+```
+
+
+
+
+## Periphery
+### Load velocyto data
+```{r}
+# Load test data
+data_dir <- "/Users/joshhahn/Google Drive/My Drive/shekharlab_data/projects/Macaque_v2/"
+
+Macaque_mat <- NULL
+
+for(i in c(1:9)){
+  file_dir <- paste0(data_dir, "MacaqueCD90S", i, "/velo_outs/")
+  #Convert(paste0(file_dir, "full.h5ad"), dest = "h5seurat")
+  file_obj <- LoadH5Seurat(paste0(file_dir, "full.h5seurat"))
+  count_mat <- file_obj@assays$matrix@counts
+  colnames(count_mat) <- paste0("MacaqueCD90S", i, substr(colnames(count_mat), 27, 44))
+  if(is.null(Macaque_mat)){
+    Macaque_mat <- count_mat
+  }
+  else{
+    Macaque_mat <- cbind(Macaque_mat, count_mat)
+  }
+}
+
+for(i in 1:3){
+  file_dir <- paste0(data_dir, "MacaqueCD73S", i, "/velo_outs/")
+  #Convert(paste0(file_dir, "full.h5ad"), dest = "h5seurat")
+  file_obj <- LoadH5Seurat(paste0(file_dir, "full.h5seurat"))
+  count_mat <- file_obj@assays$matrix@counts
+  colnames(count_mat) <- paste0("MacaqueCD73S", i, substr(colnames(count_mat), 27, 44))
+  Macaque_mat <- cbind(Macaque_mat, count_mat)
+}
+
+for(i in 1:2){
+  file_dir <- paste0(data_dir, "MacaqueCD73DP2S", i, "/velo_outs/")
+  #Convert(paste0(file_dir, "full.h5ad"), dest = "h5seurat")
+  file_obj <- LoadH5Seurat(paste0(file_dir, "full.h5seurat"))
+  count_mat <- file_obj@assays$matrix@counts
+  colnames(count_mat) <- paste0("MacaqueCD73DP2S", i, substr(colnames(count_mat), 27, 44))
+  Macaque_mat <- cbind(Macaque_mat, count_mat)
+}
+
+
+file_dir <- paste0(data_dir, "MacaquePeripheryMixedS1", "/velo_outs/")
+#Convert(paste0(file_dir, "full.h5ad"), dest = "h5seurat")
+file_obj <- LoadH5Seurat(paste0(file_dir, "full.h5seurat"))
+count_mat <- file_obj@assays$matrix@counts
+colnames(count_mat) <- paste0("MacaquePeripheryMixedS1", substr(colnames(count_mat), 27, 44))
+Macaque_mat <- cbind(Macaque_mat, count_mat)
+```
+
+### Create Object
+```{r}
+Macaque_Peri <- CreateSeuratObject(Macaque_mat, names.delim = ":")
+saveRDS(Macaque_Peri, "../Species_Objects/MacaquePeriphery_Velocyto_initial.rds")
+
+Macaque_Peri <- readRDS("../Species_Objects/MacaquePeriphery_Velocyto_initial.rds")
+
+Idents(Macaque_Peri) <- "orig.ident"
+Macaque_Peri@meta.data$tag <- NA
+Macaque_Peri@meta.data[WhichCells(Macaque_Peri, idents = "MacaqueCD90S1"), "tag"] <- "M1PerCD90S1"
+Macaque_Peri@meta.data[WhichCells(Macaque_Peri, idents = "MacaqueCD90S2"), "tag"] <- "M1PerCD90S2"
+Macaque_Peri@meta.data[WhichCells(Macaque_Peri, idents = "MacaqueCD90S3"), "tag"] <- "M1PerCD90S3"
+Macaque_Peri@meta.data[WhichCells(Macaque_Peri, idents = "MacaqueCD90S4"), "tag"] <- "M1PerCD90S4"
+Macaque_Peri@meta.data[WhichCells(Macaque_Peri, idents = "MacaqueCD90S5"), "tag"] <- "M2PerCD90S1"
+Macaque_Peri@meta.data[WhichCells(Macaque_Peri, idents = "MacaqueCD90S6"), "tag"] <- "M2PerCD90S2"
+Macaque_Peri@meta.data[WhichCells(Macaque_Peri, idents = "MacaqueCD90S7"), "tag"] <- "M3PerCD90S1"
+Macaque_Peri@meta.data[WhichCells(Macaque_Peri, idents = "MacaqueCD90S8"), "tag"] <- "M3PerCD90S2"
+Macaque_Peri@meta.data[WhichCells(Macaque_Peri, idents = "MacaqueCD90S9"), "tag"] <- "M3PerCD90S3"
+Macaque_Peri@meta.data[WhichCells(Macaque_Peri, idents = "MacaqueCD73S1"), "tag"] <- "M1PerCD73S1"
+Macaque_Peri@meta.data[WhichCells(Macaque_Peri, idents = "MacaqueCD73S2"), "tag"] <- "M1PerCD73S2"
+Macaque_Peri@meta.data[WhichCells(Macaque_Peri, idents = "MacaqueCD73S3"), "tag"] <- "M2PerCD73S1"
+Macaque_Peri@meta.data[WhichCells(Macaque_Peri, idents = "MacaqueCD73DP2S1"), "tag"] <- "M4PerCD73S1"
+Macaque_Peri@meta.data[WhichCells(Macaque_Peri, idents = "MacaqueCD73DP2S2"), "tag"] <- "M4PerCD73S2"
+Macaque_Peri@meta.data[WhichCells(Macaque_Peri, idents = "MacaquePeripheryMixedS1"), "tag"] <- "M2PerMixedS1"
+
+Macaque_Peri@meta.data$code <- substr(colnames(Macaque_Peri), nchar(colnames(Macaque_Peri))-16, nchar(colnames(Macaque_Peri))-1)
+Macaque_Peri@meta.data$barcode <- paste0(Macaque_Peri@meta.data$tag, "_", Macaque_Peri@meta.data$code, "-1")
+
+
+meta <- read.csv("../Species_Reference/Macaque_NN_RGC_AC_BC_HC_PR_metadata_3.txt")
+meta <- meta[2:dim(meta)[1],]
+rownames(meta) <- meta$NAME
+meta$NAME <- NULL
+
+Macaque_Peri@meta.data$annotated <- meta[Macaque_Peri@meta.data$barcode, "Cluster"]
+
+# Remove cells not present in the atlas
+Macaque_Peri@meta.data$keep <- !is.na(Macaque_Peri@meta.data$annotated)
+Idents(Macaque_Peri) <- "keep"
+Macaque_Peri <- subset(Macaque_Peri, idents = TRUE)
+Macaque_Peri@meta.data$keep <- NULL
+Macaque_Peri@meta.data$cell_class <- NULL
+
+saveRDS(Macaque_Peri, "../Species_Objects/MacaquePeriphery_Velo_int_ann.rds")
+```
+
+
+### Format Cell class
+```{r}
+Macaque_Peri <- readRDS("../Species_Objects/MacaquePeriphery_Velo_int_ann.rds")
+Idents(Macaque_Peri) <- "annotated"
+
+Macaque_Peri@meta.data$cell_class <- "Other"
+
+
+Macaque_Peri@meta.data[WhichCells(Macaque_Peri, idents = c(paste0("pRGC", 5:18), "PG_ON", "PG_OFF", "MG_ON", "MG_OFF")), "cell_class"] <- "RGC"
+Macaque_Peri@meta.data[WhichCells(Macaque_Peri, idents = c("FMB","DB1", "DB2","DB3a","DB3b", "IMB","DB4","BB/GB*","DB6","DB5*", "RB")), "cell_class"] <- "BP"
+
+Macaque_Peri@meta.data[WhichCells(Macaque_Peri, idents = paste0("pGa", 1:26)), "cell_class"] <- "GabaAC"
+Macaque_Peri@meta.data[WhichCells(Macaque_Peri, idents = paste0("pGl", 1:8)), "cell_class"] <- "GlyAC"
+Macaque_Peri@meta.data[WhichCells(Macaque_Peri, idents = c("H1", "H2")), "cell_class"] <- "HC"
+Macaque_Peri@meta.data[WhichCells(Macaque_Peri, idents = "MG"), "cell_class"] <- "MG"
+Macaque_Peri@meta.data[WhichCells(Macaque_Peri, idents = "Mic"), "cell_class"] <- "MicroG"
+Macaque_Peri@meta.data[WhichCells(Macaque_Peri, idents = c("M/L Cones")), "cell_class"] <- "Cone"
+Macaque_Peri@meta.data[WhichCells(Macaque_Peri, idents = "Rods"), "cell_class"] <- "Rod"
+
+Macaque_Peri@meta.data[WhichCells(Macaque_Peri, idents = c("Endo", "Pericytes")), "cell_class"] <- "Other"
+
+saveRDS(Macaque_Peri, "../Species_Initial/MacaquePeriphery_initial.rds")
+saveRDS(Macaque_Peri@meta.data, "../Metadata/MacaquePeriphery_metadata.rds")
+```
+
+### Separate into RGC / BC
+Batch correction was not performed, as downstream tasks use just the raw RGC counts
+```{r}
+Idents(Macaque_Peri) <- "cell_class"
+
+M_Per_RGC <- subset(Macaque_Peri, idents = "RGC")
+M_Per_RGC <- ClusterSeurat(M_Per_RGC)
+M_Per_RGC@meta.data$type <- M_Per_RGC@meta.data$annotated
+Idents(M_Per_RGC) <- "type"
+M_Per_RGC@meta.data$type <- factor(M_Per_RGC@meta.data$type, unique(M_Per_RGC@meta.data$type))
+
+saveRDS(M_Per_RGC, "../Species_Objects/MacaquePeri_RGC_velo_ann_v2.rds")
+saveRDS(M_Per_RGC@meta.data, "../Metadata/RGC/MacaquePeri_RGC_velo_ann_v2_metadata.rds")
+  
+M_Per_BC <- subset(Macaque_Peri, idents = "BP")
+M_Per_BC <- ClusterSeurat(M_Per_BC)
+Idents(M_Per_BC) <- "annotated"
+saveRDS(M_Per_BC, "../Species_Objects/MacaquePeri_BC_velo_ann_v1.rds")
+```
+
+# Combine fovea and periphery into full Macaque object
+```{r}
+Fovea <- readRDS("../Species_Initial/MacaqueFovea_initial.rds")
+Periphery <- readRDS("../Species_Initial/MacaquePeriphery_initial.rds")
+Full <- merge(Fovea, Periphery)
+
+saveRDS(Full, "../Species_Initial/Macaque_initial.rds")
+saveRDS(Full@meta.data, "../Metadata/Macaque_metadata.rds")
+```
+
+
+
+```{r}
+object <- readRDS("../Species_Objects/MacaqueFovea_initial_annotated.rds")
+
+numPCs = 30
+object <- NormalizeData(object)
+object <- FindVariableFeatures(object)
+object <- ScaleData(object)
+
+object <- RunPCA(object)
+object <- RunUMAP(object, dims = 1:numPCs)
+
+saveRDS(object, "../Species_Objects/MacaqueFovea_initial_annotated.rds")
+```
+
+```{r}
+object <- readRDS("../Species_Objects/MacaqueFovea_initial_annotated.rds")
+
+numPCs = 30
+object <- NormalizeData(object)
+object <- FindVariableFeatures(object)
+object <- ScaleData(object)
+
+object <- RunPCA(object)
+object <- FindNeighbors(object, dims = 1:numPCs)
+object <- RunTSNE(object, dims = 1:numPCs)
+object <- RunUMAP(object, dims = 1:numPCs)
+
+saveRDS(object, "../Species_Objects/MacaqueFovea_initial_annotated.rds")
+```
+
+
+```{r}
+object <- readRDS("../Species_Objects/MacaqueFovea_Velo_int_ann.rds")
+
+numPCs = 30
+object <- NormalizeData(object)
+object <- FindVariableFeatures(object)
+object <- ScaleData(object)
+
+object <- RunPCA(object)
+object <- RunUMAP(object, dims = 1:numPCs)
+
+saveRDS(object, "../Species_Objects/MacaqueFovea_initial_annotated.rds")
+
+```
+
+```{r}
+Macaque <- readRDS("../Species_Objects//Macaque_initial_annotated.rds")
+Mac_Fov <- readRDS("../Species_Initial/Ma")
+```
+
+

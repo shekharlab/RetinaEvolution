@@ -1,0 +1,543 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# Preprocessing 
+
+Load libraries
+```{r, warning=FALSE}
+library(reshape2)
+library(Seurat)
+library(SeuratDisk)
+library(ggplot2)
+source("../utils/utilFxns.R")
+source("../utils/plottingFxns.R")
+```
+
+Set data directory and load loom files
+```{r}
+data_dir <- "/Users/joshhahn/Google Drive/My Drive/shekharlab_data/projects/Tree_shrew/TS_velo/"
+ 
+
+#Convert(paste0(data_dir, "treeshrew1_chx10_pos/velo_outs/full.h5ad"), dest = "h5seurat")
+Chx10_pos1 <- LoadH5Seurat(paste0(data_dir, "treeshrew1_chx10_pos/velo_outs/full.h5seurat"))
+
+#Convert(paste0(data_dir, "treeshrew1_neun_chx10_neg/velo_outs/full.h5ad"), dest = "h5seurat")
+N_C_neg1 <- LoadH5Seurat(paste0(data_dir, "treeshrew1_neun_chx10_neg/velo_outs/full.h5seurat"))
+
+#Convert(paste0(data_dir, "treeshrew1_neun_pos/velo_outs/full.h5ad"), dest = "h5seurat")
+Neun_pos1 <- LoadH5Seurat(paste0(data_dir, "treeshrew1_neun_pos/velo_outs/full.h5seurat"))
+
+#Convert(paste0(data_dir, "treeshrew2_chx10_pos/velo_outs/full.h5ad"), dest = "h5seurat")
+Chx10_pos2 <- LoadH5Seurat(paste0(data_dir, "treeshrew2_chx10_pos/velo_outs/full.h5seurat"))
+
+#Convert(paste0(data_dir, "treeshrew2_neun_chx10_neg/velo_outs/full.h5ad"), dest = "h5seurat")
+N_C_neg2 <- LoadH5Seurat(paste0(data_dir, "treeshrew2_neun_chx10_neg/velo_outs/full.h5seurat"))
+
+#Convert(paste0(data_dir, "treeshrew2_neun_pos/velo_outs/full.h5ad"), dest = "h5seurat")
+Neun_pos2 <- LoadH5Seurat(paste0(data_dir, "treeshrew2_neun_pos/velo_outs/full.h5seurat"))
+
+Convert(paste0(data_dir, "TsChx10/velo_outs/full.h5ad"), dest = "h5seurat")
+TsChx <- LoadH5Seurat(paste0(data_dir, "TsChx10/velo_outs/full.h5seurat"))
+
+Convert(paste0(data_dir, "TsNueun/velo_outs/full.h5ad"), dest = "h5seurat")
+TsNu <- LoadH5Seurat(paste0(data_dir, "TsNueun/velo_outs/full.h5seurat"))
+```
+
+Combine matrices and create new Seurat object. 
+```{r}
+Shrew_mat <- cbind(Chx10_pos1@assays$matrix@counts, N_C_neg1@assays$matrix@counts, Neun_pos1@assays$matrix@counts, Chx10_pos2@assays$matrix@counts, N_C_neg2@assays$matrix@counts, Neun_pos2@assays$matrix@counts, TsChx@assays$matrix@counts, TsNu@assays$matrix@counts)
+
+Shrew <- CreateSeuratObject(Shrew_mat, names.delim = ":")
+
+Shrew@meta.data[colnames(Chx10_pos1), 'orig.file'] = "treeshrew1_chx10_pos"
+Shrew@meta.data[colnames(Neun_pos1), 'orig.file'] = "treeshrew1_neun_pos"
+Shrew@meta.data[colnames(N_C_neg1), 'orig.file'] = "treeshrew1_neun_chx10_neg"
+Shrew@meta.data[colnames(Chx10_pos2), 'orig.file'] = "treeshrew2_chx10_pos"
+Shrew@meta.data[colnames(Neun_pos2), 'orig.file'] = "treeshrew2_neun_pos"
+Shrew@meta.data[colnames(N_C_neg2), 'orig.file'] = "treeshrew2_neun_chx10_neg"
+Shrew@meta.data[colnames(TsChx), 'orig.file'] = "TsChx10"
+Shrew@meta.data[colnames(TsNu), 'orig.file'] = "TsNueun"
+
+
+```
+
+
+
+
+```{r}
+VlnPlot(Shrew, features = "nCount_RNA", pt.size = 0, group.by = "orig.file")
+VlnPlot(Shrew, features = "nFeature_RNA", pt.size = 0, group.by = "orig.file")
+```
+
+
+
+# Cell class annotation
+
+```{r}
+Shrew <- ClusterSeurat(Shrew, cluster_resolution = 0.5)
+saveRDS(Shrew, file = "../Species_Initial/Tree_shrew_initial.rds")
+
+```
+
+
+Visualize initial clusters
+```{r}
+DimPlot(Shrew, label = TRUE)
+DimPlot(Shrew, group.by = "orig.file")
+VlnPlot(Shrew, "nCount_RNA", pt.size = 0, y.max = 30000) + RotatedAxis()
+VlnPlot(Shrew, "nFeature_RNA", pt.size = 0, y.max = 6000) + RotatedAxis()
+```
+
+
+Look for major retinal cell classes
+```{r}
+#Shrew <- FindClusters(Shrew, resolution = 0.2)
+#Shrew <- DendroOrder(Shrew)
+
+RGC_markers= c("RBPMS", "RBPMS2", "SLC17A6", "POU6F2", "THY1", "NEFL", "NEFM", "SNCG")
+BC_markers= c("VSX2", "OTX2", "GRM6", "TRPM1", "VSX1", "CABP5", "GRIK1", "PRKCA")
+AC_markers= c("TFAP2A", "TFAP2B", "TFAP2C", "GAD1","GAD2-AS-1", "GAD2-AS-2",  "SLC6A9", "C1QL1", "C1QL2")
+HC_markers= c("ONECUT2","ONECUT1", "LHX1", "CALB1", "TPM3")
+Cone_markers= c("PDE6H", "CRX", "ARR3")
+Rod_markers= c("SAG", "PDC", "RHO")
+MG_markers= c("SLC1A3","RLBP1", "APOE")
+Other_markers= c("S100B", "GFAP", "C1QA", "C1QB", "CLDN5", "IGFBP7")
+
+DotPlot(Shrew, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Cone_markers, Rod_markers, MG_markers, Other_markers), group.by = "dendro_order") + RotatedAxis()
+```
+
+
+```{r}
+plot(Shrew@tools$BuildClusterTree)
+```
+
+
+Annotate clusters using marker genes and other annotation
+
+```{r}
+Idents(Shrew) <- "seurat_clusters"
+Shrew@meta.data$cell_class = "Nope"
+Shrew@meta.data[WhichCells(Shrew, idents =c(54,43,24,36,35,6,15,2,3,4,32,25,57,18,44)),]$cell_class = "RGC"
+Shrew@meta.data[WhichCells(Shrew, idents = c(22,46,52,20,27,37,53,50,58)),]$cell_class = "BP"
+Shrew@meta.data[WhichCells(Shrew, idents = c(28)),]$cell_class = "HC"
+Shrew@meta.data[WhichCells(Shrew, idents = c(7,42)),]$cell_class = "MG"
+Shrew@meta.data[WhichCells(Shrew, idents = c(23, 34,21,40,45,9,19,16,62)),]$cell_class = "GlyAC"
+Shrew@meta.data[WhichCells(Shrew, idents = c(49,33,51,14,56,59,13,47,63,5,31,30,1,8,11,60,10,12,55,61)),]$cell_class = "GabaAC"
+Shrew@meta.data[WhichCells(Shrew, idents = c(65)),]$cell_class = "Rod"
+Shrew@meta.data[WhichCells(Shrew, idents = c(0,66,26,64)),]$cell_class = "Cone"
+
+Shrew@meta.data[WhichCells(Shrew, idents = c(17,29,48,41,38,39)),]$cell_class = "Other"
+
+
+```
+
+Annotate using original genome
+```{r}
+old_Shrew <- readRDS("../Species_Objects/Alignment Comparisons/Tree_shrew_initial_Ensembl.rds")
+old_Shrew@meta.data$barcode <- substr(rownames(old_Shrew@meta.data), 28, 50)
+old_Shrew@meta.data$new_code <- paste0(old_Shrew@meta.data$orig.file, old_Shrew@meta.data$barcode)
+old_Shrew@meta.data$old_code <- rownames(old_Shrew@meta.data)
+rownames(old_Shrew@meta.data) <- old_Shrew@meta.data$new_code
+
+Shrew@meta.data$barcode <- substr(rownames(Shrew@meta.data), 28, 50)
+Shrew@meta.data$new_code <- paste0(Shrew@meta.data$orig.file, Shrew@meta.data$barcode)
+Shrew@meta.data$old_code <- rownames(Shrew@meta.data)
+Shrew@meta.data$new_code <- make.unique(Shrew@meta.data$new_code)
+rownames(Shrew@meta.data) <- Shrew@meta.data$new_code
+
+Shrew@meta.data[old_Shrew@meta.data$new_code, "other_cell_class"] <- old_Shrew@meta.data[old_Shrew@meta.data$new_code, "cell_class"]
+
+
+table(Shrew@meta.data$seurat_clusters, Shrew@meta.data$other_cell_class)
+```
+
+
+
+Investigate unmarked clusters to see if they have any unique markers
+```{r}
+Mouse <- readRDS("../Species_Initial/Mouse_initial.rds")
+
+ortho3[grep("Tfap", rownames(ortho3)), c("Tree.Shrew.gene.name", "Tree.Shrew.gene.stable.ID")]
+# 
+ident = 31
+mark <- FindMarkers(Shrew, ident.1 = ident, max.cells.per.ident = 1000)
+DotPlot(Mouse, features = toupper(head(rownames(mark), 20)), group.by = "cell_class") + RotatedAxis()
+
+```
+
+```{r}
+DimPlot(Shrew, group.by = "cell_class")
+DotPlot(Shrew, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Cone_markers, Rod_markers, MG_markers, Other_markers), group.by = "cell_class") + RotatedAxis()
+counts <- table(Shrew@meta.data$cell_class, Shrew@meta.data$orig.file)
+counts
+saveRDS(Shrew, "../Species_Initial/Tree_shrew_initial.rds")
+saveRDS(Shrew@meta.data, "../Metadata/Tree_shrew_metadata.rds")
+
+```
+
+```{r}
+Shrew <- readRDS("../Species_Initial/Tree_shrew_initial.rds")
+```
+
+
+
+
+
+# RGC clustering analysis
+Create separate RGC object
+```{r}
+Shrew <- readRDS("../Species_Initial/Tree_shrew_initial.rds")
+
+# Only keep RGCs
+Idents(Shrew) <- "cell_class"
+Shrew_RGC <- subset(Shrew, cells = WhichCells(Shrew, idents ="RGC"))
+
+# Remove cells with low and high counts or features
+VlnPlot(Shrew_RGC, "nCount_RNA", group.by = "orig.file", pt.size = .1)
+VlnPlot(Shrew_RGC, "nFeature_RNA", group.by = "orig.file", pt.size = .1)
+
+```
+
+```{r}
+Shrew_RGC <- subset(Shrew_RGC, (orig.file == "treeshrew2_neun_pos") |  (orig.file == "treeshrew1_neun_pos") |  (orig.file == "TsNueun"))
+Shrew_RGC <- subset(Shrew_RGC, subset = nCount_RNA < 25000)
+
+saveRDS(Shrew_RGC, file = "../Species_Objects/Tree_shrew_RGC_v2.rds")
+```
+
+### Run clustering pipeline
+
+```{r}
+Shrew_RGC <- ClusterSeurat(Shrew_RGC,  numPCs = 20, integrate.by = "orig.file")
+saveRDS(Shrew_RGC, "../Species_Objects/Tree_shrew_RGC_int_v3.rds")
+```
+
+### Visualize initial clusters
+```{r}
+Shrew_RGC <- readRDS("../Species_Objects/Tree_shrew_RGC_int_v3.rds")
+DimPlot(Shrew_RGC, label = TRUE)
+DimPlot(Shrew_RGC, group.by = "orig.file", cells = sample(colnames(Shrew_RGC)))
+VlnPlot(Shrew_RGC, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(Shrew_RGC, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+```
+
+```{r}
+midget_genes <- c("ESRRG", "SLC4A4", "PRKD1", "TLL1", "CACNA2D3")
+DotPlot(Shrew_RGC, features = midget_genes, assay = "RNA")
+```
+
+Examine markers for suspicious clusters. There don't appear to be contaminant clusters.
+```{r}
+DotPlot(Shrew_RGC, features = RGC_markers, assay = "RNA") + RotatedAxis()
+
+DotPlot(Shrew_RGC, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Cone_markers, Rod_markers, MG_markers, Other_markers), assay = "RNA") + RotatedAxis()
+```
+
+
+
+### Refine Clusters
+Increasing cluster resolution doesn't seem to do much. Stick with 0.8
+```{r}
+DefaultAssay(Shrew_RGC) <- "integrated"
+Shrew_RGC <- FindClusters(Shrew_RGC, resolution = 1.4)
+
+DimPlot(Shrew_RGC, label = TRUE, group.by = "integrated_snn_res.0.5")
+DimPlot(Shrew_RGC, label = TRUE, group.by = "integrated_snn_res.0.8")
+DimPlot(Shrew_RGC, label = TRUE, group.by = "integrated_snn_res.1.1")
+DimPlot(Shrew_RGC, label = TRUE, group.by = "integrated_snn_res.1.4")
+
+
+```
+
+Start with resolution = 1.4 and merge from there
+```{r}
+Shrew_RGC@meta.data$seurat_clusters <- Shrew_RGC@meta.data$integrated_snn_res.1.4
+Idents(Shrew_RGC) <- "seurat_clusters"
+VlnPlot(Shrew_RGC, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(Shrew_RGC, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+
+DotPlot(Shrew_RGC, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Cone_markers, Rod_markers, MG_markers, Other_markers), assay = "RNA") + RotatedAxis()
+
+DotPlot(Shrew_RGC, features = AC_markers, assay = "RNA") + RotatedAxis()
+
+
+```
+
+Determine if any clusters need to be merged /removed
+
+```{r}
+DefaultAssay(Shrew_RGC) <- "RNA"
+
+# Drop cluster 0 and 32, low counts
+Shrew_RGC <- DropClusters(Shrew_RGC, idents = c(0 ,32), refactor = FALSE)
+
+# Many likely AC doublets: 
+Shrew_RGC <- DropClusters(Shrew_RGC, idents = c(13, 39:42, 44, 45, 48, 49 ), refactor = FALSE)
+
+
+# 21, 38 - merge
+Shrew_RGC <- MergeClusters(Shrew_RGC, idents = c(21,38), refactor = TRUE)
+
+
+
+
+ident.1 = 21
+ident.2 = 38
+mark_dif <- FindMarkers(Shrew_RGC, ident.1 = ident.1, ident.2 = ident.2)
+mark_dif <- mark_dif[order(mark_dif$avg_log2FC),]
+
+DotPlot(Shrew_RGC, idents = c(ident.1, ident.2), features = c(head(rownames(mark_dif)), tail(rownames(mark_dif)))) + RotatedAxis()
+
+mark.1 <- FindMarkers(Shrew_RGC, ident.1 = ident.1, max.cells.per.ident = 1000)
+mark.2 <- FindMarkers(Shrew_RGC, ident.1 = ident.2, max.cells.per.ident = 1000)
+DotPlot(Shrew_RGC, features = unique(c(head(rownames(mark.1)), head(rownames(mark.2))))) + RotatedAxis()
+```
+
+```{r}
+Shrew_RGC@meta.data$type <- Shrew_RGC@meta.data$seurat_clusters
+Idents(Shrew_RGC) <- "type"
+
+DefaultAssay(Shrew_RGC) <- "integrated"
+Shrew_RGC <- FindNeighbors(Shrew_RGC, dims = 1:20)
+Shrew_RGC <- RunUMAP(Shrew_RGC, dims = 1:20)
+
+DimPlot(Shrew_RGC, label = TRUE)
+DefaultAssay(Shrew_RGC) <- "RNA"
+saveRDS(Shrew_RGC, "../Species_Objects/Tree_shrew_RGC_int_v5.rds")
+saveRDS(Shrew_RGC@meta.data, "../Metadata/RGC/Tree_shrew_RGC_int_v5_metadata.rds")
+
+```
+
+
+### Summary Plots
+```{r}
+Shrew_RGC <-readRDS( "../Species_Objects/Tree_shrew_RGC_int_v5.rds")
+
+DimPlot(Shrew_RGC, label = TRUE)
+
+```
+
+
+```{r}
+Shrew_markers <- FindAllMarkers(Shrew_RGC, only.pos = TRUE, max.cells.per.ident = 1000)
+
+Shrew_RGC <- DendroOrder(Shrew_RGC)
+Idents(Shrew_RGC) <- "type"
+
+PlotUniqueMarkers(Shrew_RGC, Shrew_markers)
+
+DotPlot(Shrew_RGC, features = TopMarkers(Shrew_markers, num_markers = 2), group.by = "type") + RotatedAxis()
+
+```
+
+```{r}
+midget_genes <- c("ESRRG", "SLC4A4", "PRKD1", "TLL1", "CACNA2D3")
+DotPlot(Shrew_RGC,  features = midget_genes, group.by = "type") + RotatedAxis()
+
+```
+
+```{r}
+Macaque <- readRDS("../Species_Objects/MacaqueFovea_RGC_velo_ann_v1.rds")
+Shrew_RGC <- readRDS("../Species_Objects/Tree_shrew_RGC_int_v2.rds")
+
+midget_genes <- c("RBPMS", "TBR1", "TPBG" ,"CA8", "KCNA1",  "CHRNA2", "MEIS2", "EOMES",  "GUCY1A3", "SPP1",  "RBPMS2") 
+DotPlot(Shrew_RGC,  features = midget_genes, group.by = "type") + RotatedAxis()
+DotPlot(Macaque,  features = midget_genes, group.by = "annotated", idents = c("MG_OFF", "MG_ON", "PG_OFF", "PG_ON")) + RotatedAxis()
+
+#TBR1 (OFF MGC), TPBG (ON MGC), CHRNA2 (ON PGC), and CA8 (OFF PGC). 
+# SPP1 and RBPMS2 are expressed by both PGC types and GUCY1A3 by both MGC types
+
+supp_genes <- c("KCNQ4", "PROX1", "MAFB", "TBR1", "TPBG", "CHRNA2", "IGFBP5", "B3GAT2","CDH8")
+DotPlot(Shrew_RGC,  features = supp_genes, group.by = "type") + RotatedAxis()
+
+
+
+```
+
+
+
+# BC clustering analysis
+```{r}
+Shrew <- readRDS("../Species_Initial/Tree_shrew_initial.rds")
+
+# Only keep BCs
+Idents(Shrew) <- "cell_class"
+Shrew_BC <- subset(Shrew, cells = WhichCells(Shrew, idents ="BP"))
+
+# Remove cells with low and high counts or features
+VlnPlot(Shrew_BC, "nCount_RNA", group.by = "orig.file", pt.size = .1)
+VlnPlot(Shrew_BC, "nFeature_RNA", group.by = "orig.file", pt.size = .1)
+
+```
+
+Only keep neun_chx10_neg samples as they contain enough cells
+```{r}
+Shrew_BC <- subset(Shrew_BC, (orig.file == "treeshrew1_neun_chx10_neg") |  (orig.file == "treeshrew2_neun_chx10_neg") | (orig.file == "TsChx10"))
+Shrew_BC <- subset(Shrew_BC, subset = nCount_RNA < 15000)
+
+saveRDS(Shrew_BC, file = "../Species_Objects/Tree_shrew_BC_v2.rds")
+```
+
+
+### Run clustering pipeline
+
+```{r}
+Shrew_BC <- ClusterSeurat(Shrew_BC, integrate.by = "orig.file", numPCs = 20)
+saveRDS(Shrew_BC, "../Species_Objects/Tree_shrew_BC_int_v3.rds")
+```
+
+### Visualize initial clusters
+```{r}
+Shrew_BC <- readRDS("../Species_Objects/Tree_shrew_BC_int_v3.rds")
+DimPlot(Shrew_BC, label = TRUE)
+DimPlot(Shrew_BC, group.by = "orig.file", cells = sample(colnames(Shrew_BC)))
+VlnPlot(Shrew_BC, "nCount_RNA", pt.size = 0) + RotatedAxis()
+VlnPlot(Shrew_BC, "nFeature_RNA", pt.size = 0) + RotatedAxis()
+```
+
+
+Examine markers for suspicious clusters. 
+```{r}
+DotPlot(Shrew_BC, features = BC_markers, assay = "RNA") + RotatedAxis()
+
+DotPlot(Shrew_BC, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Cone_markers, Rod_markers, MG_markers, Other_markers), assay = "RNA") + RotatedAxis()
+```
+
+### Refine Clusters
+Increasing cluster resolution doesn't seem to do much. Stick with 0.8
+```{r}
+DefaultAssay(Shrew_BC) <- "integrated"
+Shrew_BC <- FindClusters(Shrew_BC, resolution = 0.8)
+
+DimPlot(Shrew_BC, label = TRUE, group.by = "integrated_snn_res.0.5")
+DimPlot(Shrew_BC, label = TRUE, group.by = "integrated_snn_res.0.8")
+DimPlot(Shrew_BC, label = TRUE, group.by = "integrated_snn_res.1.1")
+DimPlot(Shrew_BC, label = TRUE, group.by = "integrated_snn_res.1.4")
+```
+
+
+Increase cluster resolution. Stick with 1.1, as some clusters might be distinct
+```{r}
+Shrew_BC@meta.data$seurat_clusters <- Shrew_BC@meta.data$integrated_snn_res.1.1
+Idents(Shrew_BC) <- "seurat_clusters"
+DefaultAssay(Shrew_BC) <- "RNA"
+
+DotPlot(Shrew_BC, features = c(RGC_markers, BC_markers, AC_markers, HC_markers, Cone_markers, Rod_markers, MG_markers, Other_markers), assay = "RNA") + RotatedAxis()
+```
+
+```{r}
+
+# Cluster 13, 16, 17  express TFAP2, an AC marker
+Shrew_BC <- DropClusters(Shrew_BC, idents = c(13,16,17), refactor = FALSE)
+# Cluster 6 expresses two HC markers
+Shrew_BC <- DropClusters(Shrew_BC, idents = c(6), refactor = TRUE)
+
+
+# Drop is what is now 10: also expresses AC markers
+Shrew_BC <- DropClusters(Shrew_BC, idents = c(10), refactor = TRUE)
+
+
+
+ident.1 = 6
+ident.2 = 11
+mark_dif <- FindMarkers(Shrew_BC, ident.1 = ident.1, ident.2 = ident.2)
+mark_dif <- mark_dif[order(mark_dif$avg_log2FC),]
+
+DotPlot(Shrew_BC, idents = c(ident.1, ident.2), features = c(head(rownames(mark_dif)), tail(rownames(mark_dif)))) + RotatedAxis()
+
+mark.1 <- FindMarkers(Shrew_BC, ident.1 = ident.1, max.cells.per.ident = 1000)
+mark.2 <- FindMarkers(Shrew_BC, ident.1 = ident.2, max.cells.per.ident = 1000)
+DotPlot(Shrew_BC, features = unique(c(head(rownames(mark.1)), head(rownames(mark.2))))) + RotatedAxis()
+```
+
+```{r}
+Shrew_BC@meta.data$type <- Shrew_BC@meta.data$seurat_clusters
+DefaultAssay(Shrew_BC) <- "RNA"
+Idents(Shrew_BC) <- "type"
+DimPlot(Shrew_BC, label = TRUE)
+```
+
+
+```{r}
+DefaultAssay(Shrew_BC) <- "RNA"
+Shrew_BC <- DendroOrder(Shrew_BC)
+
+pan_BC <- c("VSX2", "CABP5", "OTX2")
+Rod <- c("PRKCA", "GRAMD1B")
+Off <- c("GRIK1-AS-2",  "GRIK1li1")
+On <- c("GRM6", "ISL1")
+
+DotPlot(Shrew_BC, features = c(pan_BC, Rod, Off, On), group.by = "dendro_order", assay = "RNA") + RotatedAxis()
+```
+
+Check for my cone markers
+```{r}
+Mouse_BC <- readRDS("../Species_Objects/MouseBC_int_ann_v3.rds")
+Idents(Mouse_BC) <- "annotated"
+DefaultAssay(Mouse_BC) <- "RNA"
+rod_markers <- FindMarkers(Mouse_BC, ident.1 = "RBC")
+rod_markers <- rod_markers[order(rod_markers$avg_log2FC),]
+DotPlot(Mouse_BC, features = head(rownames(rod_markers), 20)) + RotatedAxis()
+
+DotPlot(Shrew_BC, features = tolower(head(rownames(rod_markers), 20)), group.by = "on_off", assay = "RNA") + RotatedAxis()
+```
+
+```{r}
+Shrew_BC@meta.data$on_off <- factor(Shrew_BC@meta.data$seurat_clusters, levels = rev(c(3,6,8,12,1,2,4,5,7,9,10,11, 13)))
+
+DotPlot(Shrew_BC, features = c(pan_BC, Rod, Off, On), group.by = "on_off", assay = "RNA") + RotatedAxis()
+
+
+```
+
+
+```{r}
+Shrew_BC@meta.data$type <- Shrew_BC@meta.data$seurat_clusters
+Idents(Shrew_BC) <- "type"
+DefaultAssay(Shrew_BC) <- "RNA"
+saveRDS(Shrew_BC, "../Species_Objects/ShrewBC_integrated_v4.rds")
+saveRDS(Shrew_BC@meta.data, "../Metadata/BC/ShrewBC_integrated_v4_metadata.rds")
+
+```
+
+
+# Misc
+```{r}
+old_Shrew <- readRDS("../Species_Objects/ShrewBC_integrated_v4.rds")
+```
+
+```{r}
+Shrew_RGC <- readRDS("../Species_Objects/Tree_shrew_RGC_int_v2.rds")
+SaveH5Seurat(Shrew_RGC, filename = "../Species_Objects/Tree_shrew_RGC_int_v2.h5Seurat")
+Convert("../Species_Objects/Tree_shrew_RGC_int_v2.h5Seurat", dest = "h5ad")
+```
+
+## RGC markers
+```{r}
+Shrew_RGC <- readRDS("../Species_Objects/Tree_shrew_RGC_int_v4.rds")
+Shrew_markers <- FindAllMarkers(Shrew_RGC, only.pos = TRUE, max.cells.per.ident = 1000, assay = "RNA")
+
+PlotUniqueMarkers(Shrew_RGC, Shrew_markers)
+
+DotPlot(Shrew_RGC, features = TopMarkers(Shrew_markers, num_markers = 2), group.by = "type") + RotatedAxis()
+```
+
+```{r}
+genes <- head(subset(Shrew_markers, cluster == 3))$gene
+
+DotPlot(Shrew_RGC, features = genes) + RotatedAxis()
+
+genes <- c("NCKAP5",  "TLL1",  "SLC4A4", "IL18R1", "SEMA5A", "CAP2-AS-1", "LINC-ATXN1-6", "IL1RAPL2", "SEMA3E", "ABCA13", "LGR5", "LINC-TMX3-11", "TAFA2", "LINC-NEFM-2", "CDK6")
+
+DotPlot(Shrew_RGC, features = genes) + RotatedAxis()
+
+
+old <- Shrew_markers
+Shrew_markers$pct.dif <- Shrew_markers$pct.1 - Shrew_markers$pct.2
+Shrew_markers <- Shrew_markers[order(Shrew_markers$pct.dif, decreasing = TRUE),]
+```
+
+# Photoreceptor
+
