@@ -1,9 +1,5 @@
 # Summary
-This repository contains code written to analyze single cell RNA sequencing data for 17 vertebrate species associated with the paper //include citation here//. The analysis heavily relies on the R package [Seurat](https://github.com/satijalab/seurat) and may be useful to users who wish to reproduce the results of the paper or try alternative analysis strategies. All raw and processed data, including Seurat objects, will be made available upon publication.
-
-If you use data or code made available here in your work, please consider citing,
-
-//Include citation here later//
+This repository contains code written to analyze single cell RNA sequencing data for 17 vertebrate species associated with the paper //include citation here//. The analysis heavily relies on the R package [Seurat](https://github.com/satijalab/seurat) and may be useful to users who wish to reproduce the results of the paper or try alternative analysis strategies. The raw and processed sequencing data produced in this work are available via the Gene Expression Omnibus (GEO) under accession GSE237215. The species-specific datasets are available via the subseries accession numbers GSE237202–GSE237214. Previously published data utilized in this paper were downloaded from GEO repositories with accession numbers GSE81905, GSE137400, GSE152842, GSE148077, GSE15910 and GSE236005.
 
 Please direct any questions associated with this repository to Joshua Hahn ([joshhahn@berkeley.edu](mailto:joshhahn@berkeley.edu)) or Karthik Shekhar ([kshekhar@berkeley.edu](mailto:kshekhar@berkeley.edu)). 
 
